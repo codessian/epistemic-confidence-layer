@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "epistemic-confidence-layer"
+version = "0.0.1"
+description = "A toolkit for quantifying and communicating epistemic confidence in AI."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Community" }]
+keywords = ["confidence", "calibration", "uncertainty", "ai", "ml"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/<your-org>/epistemic-confidence-layer"
+Issues = "https://github.com/<your-org>/epistemic-confidence-layer/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
