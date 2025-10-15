@@ -1,28 +1,19 @@
 ---
 name: Bug report
-title: "Bug: <short description>"
+about: Help us improve ECL
 labels: bug
-assignees: ''
 ---
 
-## Description
-A clear and concise description of the bug.
+**Describe the bug**
+A clear description of the problem.
 
-## Steps to Reproduce
-1. Go to '...'
-2. Run '...'
-3. See error
+**Steps to reproduce**
+1. …
 
-## Expected Behavior
-What you expected to happen.
+**Expected behavior**
 
-## Actual Behavior
-What actually happened.
+**Environment**
+- OS:
+- Python:
 
-## Environment
-- OS: Windows
-- Python: 3.10/3.11
-- Commit/Tag: <hash>
-
-## Additional Context
-Logs, screenshots, or notes.
+**Logs / Screenshots**

@@ -1,18 +1,10 @@
 ## Summary
-Explain the change and why it’s needed.
-
-## Changes
-- Short bullet list of key changes
-
-## Verification
-- Steps to verify or tests included
-
-## Screenshots (if applicable)
-
-## Related Issues
-Link issues or discussions (e.g., `Fixes #123`).
+Explain what this PR changes and why.
 
 ## Checklist
-- [ ] I read the CONTRIBUTING.md
-- [ ] I followed code style and added tests where applicable
-- [ ] I updated documentation or examples if behavior changed
+- [ ] Tests added/updated
+- [ ] Docs updated (README/docs/*)
+- [ ] Lint/typecheck pass (`ruff`, `mypy`)
+
+## Notes
+Anything reviewers should focus on?

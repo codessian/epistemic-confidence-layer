@@ -1,5 +1,9 @@
 # Epistemic Confidence Layer (ECL)
 
+[![CI](https://github.com/codessian/epistemic-confidence-layer/actions/workflows/ci.yml/badge.svg)](https://github.com/codessian/epistemic-confidence-layer/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](#)
+
 > **TLS for Knowledge.** A model-agnostic trust protocol that turns fluent AI into **calibrated**, **auditable** systems.
 
 **Goal:** When an AI says "80% confident," it's correct ~80% of the time (ECE ≤ 0.10).
@@ -68,3 +72,7 @@ make evaluate  # run toy benchmark & plot reliability
 
 ## Roadmap
 See [`ROADMAP.md`](ROADMAP.md).
+
+## Community
+- Ask questions in **Discussions**.
+- Issues welcome—start with `good first issue`.
