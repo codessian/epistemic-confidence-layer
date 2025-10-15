@@ -1,0 +1,86 @@
+name: Nightly Reliability
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC nightly
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+  discussions: write
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run toy evaluation
+        run: |
+          make evaluate
+          test -f benchmarks/results/metrics.json
+      - name: Prepare trend data
+        run: |
+          mkdir -p benchmarks/trends
+          python .github/scripts/update_trend.py \
+            --metrics benchmarks/results/metrics.json \
+            --out-csv benchmarks/trends/ece_trend.csv
+          python .github/scripts/plot_trend.py \
+            --csv benchmarks/trends/ece_trend.csv \
+            --out benchmarks/trends/ece_trend.png
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-trend
+          path: |
+            benchmarks/results/metrics.json
+            benchmarks/trends/ece_trend.csv
+            benchmarks/trends/ece_trend.png
+      - name: Post to Discussions (best-effort)
+        if: ${{ always() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const core = require('@actions/core');
+            try {
+              const metrics = JSON.parse(fs.readFileSync('benchmarks/results/metrics.json','utf8'));
+              const title = `Nightly ECE ${new Date().toISOString().slice(0,10)}`;
+              const bodies = [
+                `**ECE (before → after):** ${metrics.ece_before?.toFixed(3)} → ${metrics.ece_after?.toFixed(3)}`,
+                `**Samples:** ${metrics.n_samples}`,
+                `Artifacts: attached to workflow run.`,
+              ].join('\n');
+              // Get a category (fall back to first)
+              const { repository } = await github.graphql(`
+                query($owner:String!, $name:String!) {
+                  repository(owner:$owner, name:$name) {
+                    discussionCategories(first:10){ nodes { id, name } }
+                  }
+                }`,
+                { owner: context.repo.owner, name: context.repo.repo }
+              );
+              const cat = repository.discussionCategories?.nodes?.[0];
+              if (!cat) { core.warning('No discussion categories found; skipping post.'); return; }
+              await github.graphql(`
+                mutation($repoId:ID!, $title:String!, $body:String!, $catId:ID!) {
+                  createDiscussion(input:{repositoryId:$repoId, title:$title, body:$body, categoryId:$catId}) {
+                    discussion { number }
+                  }
+                }`,
+                {
+                  repoId: (await github.graphql(
+                    `query($owner:String!, $name:String!){ repository(owner:$owner, name:$name){ id } }`,
+                    { owner: context.repo.owner, name: context.repo.repo }
+                  )).repository.id,
+                  title,
+                  body: bodies,
+                  catId: cat.id
+                }
+              );
+            } catch (e) {
+              core.warning('Could not post discussion (enable Discussions to use this).');
+            }

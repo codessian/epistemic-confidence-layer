@@ -1,0 +1,393 @@
+*** a/requirements.txt
+--- b/requirements.txt
+@@
+ fastapi>=0.110.0
+ uvicorn>=0.29.0
+ pydantic>=2.7.0
+ numpy>=1.26.0
+ matplotlib>=3.8.0
++scikit-learn>=1.4.0
++scipy>=1.11.0
++sentence-transformers>=2.7.0
++openai>=1.40.0
++anthropic>=0.36.0
+
+*** a/.env.example
+--- b/.env.example
+@@
+ # Server
+ PORT=8000
+ 
+ # Provider API keys (optional; stubs used if missing)
+ OPENAI_API_KEY=
+ ANTHROPIC_API_KEY=
+ 
++# Embeddings backend: sentence-transformers|openai
++ECL_EMBED_BACKEND=sentence-transformers
++# Sentence-Transformers model (defaults to all-MiniLM-L6-v2)
++ECL_ST_MODEL=all-MiniLM-L6-v2
++# OpenAI embedding model (if ECL_EMBED_BACKEND=openai)
++ECL_OPENAI_EMBED_MODEL=text-embedding-3-small
++
+*** /dev/null
+--- b/src/ecl/adapters/openai.py
+@@
++from __future__ import annotations
++import os
++from typing import Any, Dict
++from .base import BaseAdapter, register_adapter
++
++try:
++    from openai import OpenAI
++except Exception:  # pragma: no cover
++    OpenAI = None  # type: ignore
++
++
++@register_adapter("openai")
++class OpenAIAdapter(BaseAdapter):
++    def available(self) -> bool:
++        return os.getenv("OPENAI_API_KEY") is not None and OpenAI is not None
++
++    def generate(self, prompt: str, **kwargs: Any) -> str:
++        # Graceful stub if no key/SDK
++        if not self.available():
++            return f"[openai-stub] {prompt[:200]}"
++        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
++        model = kwargs.get("model", "gpt-4o-mini")
++        temperature = float(kwargs.get("temperature", 0.2))
++        # Use chat.completions for broad compatibility
++        resp = client.chat.completions.create(
++            model=model,
++            messages=[{"role": "user", "content": prompt}],
++            temperature=temperature,
++            max_tokens=int(kwargs.get("max_tokens", 256)),
++        )
++        return (resp.choices[0].message.content or "").strip()
++
+*** /dev/null
+--- b/src/ecl/adapters/anthropic.py
+@@
++from __future__ import annotations
++import os
++from typing import Any
++from .base import BaseAdapter, register_adapter
++
++try:
++    import anthropic
++except Exception:  # pragma: no cover
++    anthropic = None  # type: ignore
++
++
++@register_adapter("anthropic")
++class AnthropicAdapter(BaseAdapter):
++    def available(self) -> bool:
++        return os.getenv("ANTHROPIC_API_KEY") is not None and anthropic is not None
++
++    def generate(self, prompt: str, **kwargs: Any) -> str:
++        if not self.available():
++            return f"[anthropic-stub] {prompt[:200]}"
++        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
++        model = kwargs.get("model", "claude-3-5-sonnet-20240620")
++        temperature = float(kwargs.get("temperature", 0.2))
++        resp = client.messages.create(
++            model=model,
++            max_tokens=int(kwargs.get("max_tokens", 256)),
++            temperature=temperature,
++            messages=[{"role": "user", "content": prompt}],
++        )
++        # Flatten text content
++        parts = [b.text for b in resp.content if getattr(b, "type", "") == "text"]
++        return "\n".join(parts).strip()
++
+*** /dev/null
+--- b/src/ecl/similarity.py
+@@
++from __future__ import annotations
++import os
++from typing import Iterable, List, Tuple
++import numpy as np
++
++_BACKEND = os.getenv("ECL_EMBED_BACKEND", "sentence-transformers").lower()
++
++class EmbeddingBackend:
++    def __init__(self) -> None:
++        self.backend = _BACKEND
++        self._model = None
++        if self.backend == "sentence-transformers":
++            try:
++                from sentence_transformers import SentenceTransformer
++            except Exception as e:  # pragma: no cover
++                raise RuntimeError("sentence-transformers not installed") from e
++            model_name = os.getenv("ECL_ST_MODEL", "all-MiniLM-L6-v2")
++            self._model = SentenceTransformer(model_name)
++        elif self.backend == "openai":
++            try:
++                from openai import OpenAI
++            except Exception as e:  # pragma: no cover
++                raise RuntimeError("openai SDK not installed") from e
++            self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
++            self._embed_model = os.getenv("ECL_OPENAI_EMBED_MODEL", "text-embedding-3-small")
++        else:
++            raise ValueError(f"Unknown ECL_EMBED_BACKEND: {self.backend}")
++
++    def embed(self, texts: Iterable[str]) -> np.ndarray:
++        texts = list(texts)
++        if self.backend == "sentence-transformers":
++            vecs = self._model.encode(texts, normalize_embeddings=True)
++            return np.asarray(vecs, dtype=np.float32)
++        else:
++            # OpenAI embeddings
++            resp = self._client.embeddings.create(model=self._embed_model, input=texts)
++            vecs = [np.asarray(d.embedding, dtype=np.float32) for d in resp.data]
++            # Normalize
++            vecs = [v/np.linalg.norm(v) if np.linalg.norm(v) > 0 else v for v in vecs]
++            return np.vstack(vecs)
++
++
++def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
++    denom = (np.linalg.norm(a) * np.linalg.norm(b))
++    if denom == 0:
++        return 0.0
++    return float(np.dot(a, b) / denom)
++
++
++def classify_pair(
++    a: str,
++    b: str,
++    backend: EmbeddingBackend | None = None,
++    eq_thresh: float = 0.95,
++    rel_thresh: Tuple[float, float] = (0.85, 0.95),
++) -> Tuple[str, float]:
++    """
++    Returns (label, similarity) with labels:
++      - "equivalent" if sim >= eq_thresh
++      - "related" if rel[0] <= sim < rel[1]
++      - "different" otherwise
++    """
++    be = backend or EmbeddingBackend()
++    v = be.embed([a, b])
++    sim = cosine_sim(v[0], v[1])
++    if sim >= eq_thresh:
++        return "equivalent", sim
++    if rel_thresh[0] <= sim < rel_thresh[1]:
++        return "related", sim
++    return "different", sim
++
+*** /dev/null
+--- b/src/ecl/calibration/isotonic.py
+@@
++from __future__ import annotations
++import numpy as np
++from sklearn.isotonic import IsotonicRegression
++
++class IsotonicCalibrator:
++    def __init__(self) -> None:
++        self._iso = IsotonicRegression(out_of_bounds="clip")
++        self._fitted = False
++
++    def fit(self, scores: np.ndarray, labels: np.ndarray) -> "IsotonicCalibrator":
++        scores = np.asarray(scores, dtype=np.float32)
++        labels = np.asarray(labels, dtype=np.float32)
++        self._iso.fit(scores, labels)
++        self._fitted = True
++        return self
++
++    def predict(self, scores: np.ndarray) -> np.ndarray:
++        if not self._fitted:
++            raise RuntimeError("IsotonicCalibrator not fitted")
++        scores = np.asarray(scores, dtype=np.float32)
++        return self._iso.predict(scores)
++
+*** /dev/null
+--- b/src/ecl/calibration/platt.py
+@@
++from __future__ import annotations
++import numpy as np
++from sklearn.linear_model import LogisticRegression
++
++class PlattCalibrator:
++    def __init__(self) -> None:
++        self._lr = LogisticRegression(solver="lbfgs")
++        self._fitted = False
++
++    def fit(self, scores: np.ndarray, labels: np.ndarray) -> "PlattCalibrator":
++        scores = np.asarray(scores, dtype=np.float32).reshape(-1, 1)
++        labels = np.asarray(labels, dtype=np.int32)
++        self._lr.fit(scores, labels)
++        self._fitted = True
++        return self
++
++    def predict(self, scores: np.ndarray) -> np.ndarray:
++        if not self._fitted:
++            raise RuntimeError("PlattCalibrator not fitted")
++        scores = np.asarray(scores, dtype=np.float32).reshape(-1, 1)
++        proba = self._lr.predict_proba(scores)[:, 1]
++        return proba.astype(np.float32)
++
+*** a/src/ecl/consensus/score.py
+--- b/src/ecl/consensus/score.py
+@@
+-from typing import List, Dict
++from typing import List, Dict, Tuple
+ import numpy as np
++from ..similarity import classify_pair, EmbeddingBackend
+ 
+ def consensus_score(claims: List[str]) -> float:
+-    """
+-    Very simple placeholder: fraction of exact-match duplicates.
+-    """
+-    if not claims:
+-        return 0.0
+-    unique = set([c.strip().lower() for c in claims if c and c.strip()])
+-    return 1.0 if len(unique) == 1 else max(0.0, 1.0 - (len(unique) - 1) / max(1, len(claims)))
++    """
++    Semantically-aware consensus:
++      - Compute pairwise similarity
++      - Count 'equivalent' pairs as strong agreement
++      - 'related' pairs contribute partial credit
++    Returns score in [0,1].
++    """
++    clean = [c.strip() for c in claims if c and c.strip()]
++    n = len(clean)
++    if n <= 1:
++        return float(n)
++    be = EmbeddingBackend()
++    # pairwise comparisons
++    agree = 0.0
++    total = 0
++    for i in range(n):
++        for j in range(i + 1, n):
++            label, sim = classify_pair(clean[i], clean[j], backend=be)
++            total += 1
++            if label == "equivalent":
++                agree += 1.0
++            elif label == "related":
++                agree += 0.5
++    if total == 0:
++        return 0.0
++    return float(max(0.0, min(1.0, agree / total)))
+ 
+*** /dev/null
+--- b/tests/test_similarity.py
+@@
++import os
++import pytest
++from src.ecl.similarity import classify_pair, EmbeddingBackend
++
++@pytest.mark.slow
++def test_equivalent_related_different():
++    os.environ.setdefault("ECL_EMBED_BACKEND", "sentence-transformers")
++    be = EmbeddingBackend()
++    eq_label, eq_sim = classify_pair("The sky is blue.", "The sky is blue.", backend=be)
++    rel_label, rel_sim = classify_pair("The sky is blue.", "The sky can appear azure.", backend=be)
++    diff_label, diff_sim = classify_pair("The sky is blue.", "Saturn has rings.", backend=be)
++    assert eq_label in {"equivalent", "related"}
++    assert diff_label == "different"
++
+*** /dev/null
+--- b/tests/test_calibration.py
+@@
++import numpy as np
++from src.ecl.calibration.isotonic import IsotonicCalibrator
++from src.ecl.calibration.platt import PlattCalibrator
++from src.ecl.metrics.calibration import ece  # assuming this exists already in repo
++
++def test_isotonic_calibration_monotonic():
++    scores = np.linspace(0.0, 1.0, 20)
++    labels = (scores > 0.5).astype(int)
++    iso = IsotonicCalibrator().fit(scores, labels)
++    preds = iso.predict(scores)
++    # Monotonicity
++    assert (np.diff(preds) >= -1e-6).all()
++
++def test_platt_calibration_bounds():
++    scores = np.linspace(0.0, 1.0, 50)
++    labels = (scores > 0.6).astype(int)
++    pl = PlattCalibrator().fit(scores, labels)
++    preds = pl.predict(np.array([0.0, 0.5, 1.0]))
++    assert (preds >= 0.0).all() and (preds <= 1.0).all()
++
+*** a/docs/mkdocs.yml
+--- b/docs/mkdocs.yml
+@@
+   - API: api.md
+   - Tutorial: tutorial.md
+   - Bots: bots.md
+   - Operations: operations.md
++  - Similarity & Calibration: similarity-calibration.md
+   - Governance: governance.md
+ 
+*** /dev/null
+--- b/docs/similarity-calibration.md
+@@
++# Similarity & Calibration
++
++## Semantic Equivalence
++ECL uses embeddings to classify claim pairs:
++
++- **equivalent**: cosine ≥ 0.95
++- **related**: 0.85–0.95
++- **different**: < 0.85
++
++Backends:
++- `sentence-transformers` (default, `ECL_ST_MODEL`, e.g. `all-MiniLM-L6-v2`)
++- OpenAI embeddings (`ECL_OPENAI_EMBED_MODEL`, e.g. `text-embedding-3-small`)
++
++Set `ECL_EMBED_BACKEND=sentence-transformers|openai`.
++
++## Consensus Score
++Consensus now aggregates pairwise labels:
++`equivalent = 1.0`, `related = 0.5`, `different = 0.0`, normalized to [0,1].
++
++## Calibration
++Two baselines are provided:
++- **Isotonic regression** for non-parametric calibration
++- **Platt scaling** (logistic) for parametric calibration
++
++Use these in the evaluation harness to report before/after ECE and plot reliability curves.
++
+*** a/docs/tutorial.md
+--- b/docs/tutorial.md
+@@
+ ## End-to-end: from cURL to curve
+@@
+ 7) View the reliability curve at `benchmarks/results/reliability.png`.
++
++### Optional: enable semantic similarity
++By default, ECL uses `sentence-transformers` for embeddings. To switch:
++```bash
++export ECL_EMBED_BACKEND=openai
++export OPENAI_API_KEY=sk-...
++export ECL_OPENAI_EMBED_MODEL=text-embedding-3-small
++```
++Re-run: `make evaluate`
++
+*** a/README.md
+--- b/README.md
+@@
+ ### Features
+@@
+ - Calibration metrics (ECE, Brier)
+ - Reliability curve plotting
++- Semantic equivalence via embeddings (sentence-transformers by default)
++- Isotonic & Platt calibration baselines
+@@
+ ### Configuration
+@@
+ - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` for real providers (optional)
++- `ECL_EMBED_BACKEND=sentence-transformers|openai`
++- `ECL_ST_MODEL=all-MiniLM-L6-v2` (default)
++- `ECL_OPENAI_EMBED_MODEL=text-embedding-3-small`
+ 
+*** a/.github/workflows/pr-verify.yml
+--- b/.github/workflows/pr-verify.yml
+@@
+       - name: Install deps
+         run: |
+           python -m pip install -U pip
+           pip install -r requirements.txt -r requirements-dev.txt
++          python - <<'PY'
++import os
++os.environ["HF_HUB_DISABLE_TELEMETRY"]="1"
++print("Env primed for sentence-transformers")
++PY

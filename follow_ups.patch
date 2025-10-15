@@ -1,0 +1,329 @@
+*** /dev/null
+--- b/.github/workflows/nightly-reliability.yml
+@@
++name: Nightly Reliability
++on:
++  schedule:
++    - cron: "0 2 * * *"   # 02:00 UTC nightly
++  workflow_dispatch: {}
++permissions:
++  contents: read
++  actions: read
++  discussions: write
++jobs:
++  eval:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with: { python-version: "3.11" }
++      - name: Install deps
++        run: |
++          python -m pip install -U pip
++          pip install -r requirements.txt -r requirements-dev.txt
++      - name: Run toy evaluation
++        run: |
++          make evaluate
++          test -f benchmarks/results/metrics.json
++      - name: Prepare trend data
++        run: |
++          mkdir -p benchmarks/trends
++          python .github/scripts/update_trend.py \
++            --metrics benchmarks/results/metrics.json \
++            --out-csv benchmarks/trends/ece_trend.csv
++          python .github/scripts/plot_trend.py \
++            --csv benchmarks/trends/ece_trend.csv \
++            --out benchmarks/trends/ece_trend.png
++      - name: Upload artifacts
++        uses: actions/upload-artifact@v4
++        with:
++          name: nightly-trend
++          path: |
++            benchmarks/results/metrics.json
++            benchmarks/trends/ece_trend.csv
++            benchmarks/trends/ece_trend.png
++      - name: Post to Discussions (best-effort)
++        if: ${{ always() }}
++        uses: actions/github-script@v7
++        with:
++          script: |
++            const fs = require('fs');
++            const core = require('@actions/core');
++            try {
++              const metrics = JSON.parse(fs.readFileSync('benchmarks/results/metrics.json','utf8'));
++              const title = `Nightly ECE ${new Date().toISOString().slice(0,10)}`;
++              const bodies = [
++                `**ECE (before → after):** ${metrics.ece_before?.toFixed(3)} → ${metrics.ece_after?.toFixed(3)}`,
++                `**Samples:** ${metrics.n_samples}`,
++                `Artifacts: attached to workflow run.`,
++              ].join('\\n');
++              // Get a category (fall back to first)
++              const { repository } = await github.graphql(`
++                query($owner:String!, $name:String!) {
++                  repository(owner:$owner, name:$name) {
++                    discussionCategories(first:10){ nodes { id, name } }
++                  }
++                }`,
++                { owner: context.repo.owner, name: context.repo.repo }
++              );
++              const cat = repository.discussionCategories?.nodes?.[0];
++              if (!cat) { core.warning('No discussion categories found; skipping post.'); return; }
++              await github.graphql(`
++                mutation($repoId:ID!, $title:String!, $body:String!, $catId:ID!) {
++                  createDiscussion(input:{repositoryId:$repoId, title:$title, body:$body, categoryId:$catId}) {
++                    discussion { number }
++                  }
++                }`,
++                {
++                  repoId: (await github.graphql(
++                    `query($owner:String!, $name:String!){ repository(owner:$owner, name:$name){ id } }`,
++                    { owner: context.repo.owner, name: context.repo.repo }
++                  )).repository.id,
++                  title,
++                  body: bodies,
++                  catId: cat.id
++                }
++              );
++            } catch (e) {
++              core.warning('Could not post discussion (enable Discussions to use this).');
++            }
++
+*** /dev/null
+--- b/.github/scripts/update_trend.py
+@@
++import argparse, csv, json, os, datetime
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--metrics", required=True)
++    ap.add_argument("--out-csv", required=True)
++    args = ap.parse_args()
++    with open(args.metrics) as f:
++        m = json.load(f)
++    row = {
++        "date": datetime.date.today().isoformat(),
++        "ece_before": f"{m.get('ece_before', '')}",
++        "ece_after": f"{m.get('ece_after', '')}",
++        "n_samples": f"{m.get('n_samples', '')}",
++    }
++    header = ["date","ece_before","ece_after","n_samples"]
++    exists = os.path.exists(args.out_csv)
++    with open(args.out_csv, "a", newline="") as f:
++        w = csv.DictWriter(f, fieldnames=header)
++        if not exists:
++            w.writeheader()
++        w.writerow(row)
++    print("Appended trend:", row)
++
++if __name__ == "__main__":
++    main()
++
+*** /dev/null
+--- b/.github/scripts/plot_trend.py
+@@
++import argparse, csv
++import matplotlib.pyplot as plt
++from datetime import datetime
++
++ap = argparse.ArgumentParser()
++ap.add_argument("--csv", required=True)
++ap.add_argument("--out", required=True)
++args = ap.parse_args()
++
++dates, before, after = [], [], []
++with open(args.csv) as f:
++    r = csv.DictReader(f)
++    for row in r:
++        dates.append(datetime.fromisoformat(row["date"]))
++        before.append(float(row["ece_before"]))
++        after.append(float(row["ece_after"]))
++
++plt.figure(figsize=(8,4.5))
++plt.plot(dates, before, marker="o", label="ECE (before)")
++plt.plot(dates, after, marker="o", label="ECE (after)")
++plt.xlabel("Date"); plt.ylabel("ECE"); plt.title("Nightly ECE Trend")
++plt.legend(); plt.grid(True, alpha=0.3)
++plt.tight_layout()
++plt.savefig(args.out, dpi=160)
++print("Wrote", args.out)
++
+*** /dev/null
+--- b/.github/workflows/release-drafter.yml
+@@
++name: Release Drafter
++on:
++  push:
++    branches: [ main ]
++  pull_request:
++    types: [opened, reopened, synchronize]
++  workflow_dispatch: {}
++permissions:
++  contents: write
++jobs:
++  update_release_draft:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: release-drafter/release-drafter@v6
++        with:
++          config-name: .github/release-drafter.yml
++        env:
++          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++
+*** /dev/null
+--- b/.github/release-drafter.yml
+@@
++name-template: "v$RESOLVED_VERSION"
++tag-template: "v$RESOLVED_VERSION"
++categories:
++  - title: "🚀 Features"
++    labels: ["feature", "enhancement"]
++  - title: "🐛 Fixes"
++    labels: ["bug", "fix"]
++  - title: "🧰 Maintenance"
++    labels: ["chore", "docs", "ci", "refactor", "perf"]
++change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
++version-resolver:
++  major:
++    labels: ["major"]
++  minor:
++    labels: ["feature","enhancement","minor"]
++  patch:
++    labels: ["fix","bug","chore","docs","ci","refactor","perf","patch"]
++template: |
++  ## Changes
++  $CHANGES
++
+*** /dev/null
+--- b/.github/workflows/ossf-scorecard.yml
+@@
++name: OSSF Scorecard
++on:
++  schedule:
++    - cron: "0 3 * * 1"   # weekly Monday
++  push:
++    branches: [ main ]
++  workflow_dispatch: {}
++permissions:
++  actions: read
++  contents: read
++  security-events: write
++jobs:
++  analysis:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++        with: { persist-credentials: false }
++      - uses: ossf/scorecard-action@v2.3.1
++        with:
++          results_file: results.sarif
++          results_format: sarif
++          publish_results: true
++      - uses: github/codeql-action/upload-sarif@v3
++        with:
++          sarif_file: results.sarif
++
+*** /dev/null
+--- b/.github/DISCUSSION_TEMPLATE/first-green-pr.md
+@@
++---
++title: "How to get your first green PR ✅"
++labels: []
++---
++
++Welcome! This playbook gets you from **clone → green PR** fast:
++
++**1) Read this first:** [Tutorial: cURL → reliability curve](https://codessian.github.io/epistemic-confidence-layer/tutorial/)
++
++**2) Bots & Gates**
++- PR Verify bot runs: lint, type, tests, toy eval, ECE regression guard (+0.02 max)
++- Triage bot auto-labels by area; add context for routing
++- DCO sign-off required (`git commit -s -m "feat: …"`)
++
++**3) Good-first issues**
++Pick any issue labeled `good first issue` or `help wanted`. We love PRs that include a failing test first.
++
++**4) Run locally**
++```bash
++pip install -r requirements.txt -r requirements-dev.txt
++uvicorn src.ecl.server.app:app --reload
++make evaluate
++```
++
++**5) Open a PR**
++Follow the PR template, keep commit messages Conventional Commit style, and link to the issue.
++
++Questions? Comment here. We’ll help you ship. 🚀
++
+*** a/docs/mkdocs.yml
+--- b/docs/mkdocs.yml
+@@
+   - API: api.md
+   - Tutorial: tutorial.md
+   - Bots: bots.md
++  - Operations: operations.md
+   - Governance: governance.md
+ 
+*** /dev/null
+--- b/docs/operations.md
+@@
++# Operations & Hygiene
++
++## Nightly Reliability
++We run a nightly evaluation at 02:00 UTC:
++- Produces `benchmarks/results/metrics.json`
++- Appends trend data to `benchmarks/trends/ece_trend.csv`
++- Renders `benchmarks/trends/ece_trend.png`
++- Uploads artifacts to the workflow run
++- (If Discussions are enabled) posts a summary to Discussions
++
++> Enable Discussions: **Settings → General → Discussions**.
++
++## Release Notes
++Release Drafter builds a draft from Conventional Commits. On tag, edit & publish the draft.
++
++## Security Posture
++OSSF Scorecard runs weekly and uploads SARIF results (visible in Security tab).
++
+*** a/README.md
+--- b/README.md
+@@
+ ### Quickstart
+@@
+ ### Contracts & Schema
+@@
++- **Nightly Reliability:** CI appends ECE trend and uploads artifacts. See *Operations → Nightly Reliability*.
++- **Release Notes:** auto-drafted from Conventional Commits (see *Operations*).
++- **Security:** OSSF Scorecard runs weekly; see repo **Security** tab.
++
+*** /dev/null
+--- b/ops/branch_protection.json
+@@
++{
++  "required_status_checks": {
++    "strict": true,
++    "contexts": ["PR Verify"]
++  },
++  "enforce_admins": true,
++  "required_pull_request_reviews": {
++    "required_approving_review_count": 1,
++    "require_code_owner_reviews": true
++  },
++  "restrictions": null
++}
++
+*** /dev/null
+--- b/ops/branch_protection_gh_cli.sh
+@@
++#!/usr/bin/env bash
++set -euo pipefail
++# Apply branch protection using GitHub CLI
++# Usage: ./ops/branch_protection_gh_cli.sh owner repo
++OWNER="${1:-$GITHUB_REPOSITORY_OWNER}"
++REPO="${2:-$(basename "$GITHUB_REPOSITORY")}"
++gh api \
++  -X PUT \
++  -H "Accept: application/vnd.github+json" \
++  "/repos/${OWNER}/${REPO}/branches/main/protection" \
++  --input ops/branch_protection.json
++echo "Applied branch protection to ${OWNER}/${REPO}@main"
++

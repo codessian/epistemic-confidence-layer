@@ -104,6 +104,10 @@ Automated assistants keep quality high:
 - **ECL-Triage Bot** labels issues and welcomes new contributors.
 See [`docs/bots.md`](docs/bots.md).
 
+- Nightly Reliability: CI appends ECE trend and uploads artifacts. See Operations → Nightly Reliability.
+- Release Notes: auto-drafted from Conventional Commits (see Operations).
+- Security: OSSF Scorecard runs weekly; see repo Security tab.
+
 ## Community
 - Ask questions in **Discussions**.
 - Issues welcome—start with `good first issue`.
