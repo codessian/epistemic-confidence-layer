@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Tuple
 from dataclasses import dataclass
 from ..cache import get as cache_get, set as cache_set
+from ..adapter_metrics import record_adapter_event
 
 
 @dataclass
@@ -83,8 +84,11 @@ def generate_with_cache(adapter: BaseAdapter, prompt: str, **kwargs: Any) -> str
     """Wrap adapter.generate with a simple TTL cache (namespace = adapter name)."""
     key = _cache_key(prompt, kwargs)
     namespace = adapter.__class__.__name__.lower()
+    slug = namespace.replace("adapter", "")
     hit = cache_get(namespace, key)
     if hit is not None:
+        # Record cache hit for observability
+        record_adapter_event(slug, elapsed_ms=0.0, retries=0, status="ok", cache_hit=True, code="CACHE_HIT")
         return hit
     out = adapter.generate(prompt, **kwargs)
     cache_set(namespace, key, out)
