@@ -38,11 +38,36 @@ ECL uses standard HTTP status codes and structured error responses:
 ```
 
 ### Error Codes
-- `PROVIDER_TIMEOUT`: Model provider API timeout
-- `CACHE_HIT`: Successful cache retrieval (info only)
+- `PROVIDER_TIMEOUT` → HTTP 504: Model provider API timeout
+- `RATE_LIMITED` → HTTP 429: Request rate limit exceeded
+- `NETWORK_ERROR` → HTTP 503: Connectivity/transport error calling provider
+- `BAD_REQUEST` → HTTP 400: Invalid request to provider (client-side)
+- `PROVIDER_ERROR` → HTTP 502: Provider internal/unknown error (transient)
+- `CACHE_HIT`: Successful cache retrieval (info event only; not an error)
 - `CALIBRATION_MISSING`: Calibration model not available
 - `PROV_BUILD_FAIL`: Provenance graph construction failed
-- `RATE_LIMITED`: Request rate limit exceeded
+
+Each error includes fields: `code`, `message`, `hint`, `provider`, optional `status`, and optional `retry_after_ms` where applicable.
+
+## Runtime Tuning
+
+Environment variables to tune adapter behavior and caching:
+
+- Provider timeouts and retries
+  - `ECL_PROVIDER_TIMEOUT_S` (default `8.0`) per-call timeout seconds
+  - `ECL_PROVIDER_MAX_ATTEMPTS` (default `3`) retry attempts
+  - `ECL_PROVIDER_MAX_ELAPSED_S` (default `16.0`) max total elapsed seconds
+  - `ECL_PROVIDER_BASE_DELAY_S` (default `0.6`) base backoff delay seconds
+  - `ECL_PROVIDER_JITTER_S` (default `0.2`) random jitter seconds added to backoff
+
+- Cache configuration
+  - `ECL_CACHE_TTL_HOURS` (default `12`) adapter cache TTL
+  - `ECL_CACHE_DIR` (default `.ecl_cache`) cache directory
+
+- Provider credentials
+  - `OPENAI_API_KEY` for OpenAI adapters
+  - `ANTHROPIC_API_KEY` for Anthropic adapters
+  - `GOOGLE_API_KEY` for Google Gemini adapters
 
 ## Schema Validation
 Response format is validated against [`schemas/verify-response.json`](../schemas/verify-response.json).

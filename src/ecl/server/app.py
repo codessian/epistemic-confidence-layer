@@ -1,12 +1,38 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, Request
+from fastapi.responses import JSONResponse
 import json, time
 from pathlib import Path
 from ..provenance.prov import prov_json_for_claims, HASH_VERSION
 from ..similarity import classify_similarity
 from ..calibration.isotonic import IsotonicCalibrator
 from ..cache import FileCache
+from ..errors import AdapterError
 
 app = FastAPI(title="ECL API")
+
+
+# Standardized error payloads for adapter errors
+@app.exception_handler(AdapterError)
+async def adapter_error_handler(request: Request, exc: AdapterError):
+    code_to_status = {
+        "PROVIDER_TIMEOUT": 504,
+        "RATE_LIMITED": 429,
+        "NETWORK_ERROR": 503,
+        "BAD_REQUEST": 400,
+        "PROVIDER_ERROR": 502,
+    }
+    status = exc.status if exc.status is not None else code_to_status.get(exc.code, 502)
+    payload = {
+        "error": {
+            "code": exc.code,
+            "message": str(exc),
+            "hint": exc.hint,
+            "provider": exc.provider,
+            "status": status,
+            "retry_after_ms": exc.retry_after_ms,
+        }
+    }
+    return JSONResponse(status_code=status, content=payload)
 
 @app.get("/health")
 def health():
