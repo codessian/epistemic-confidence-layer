@@ -1,0 +1,652 @@
+# from repo root
+cat > v0_2_feature_bundle.patch <<'PATCH'
+*** a/requirements.txt
+--- b/requirements.txt
+@@
+ fastapi
+ uvicorn
+ pydantic
+ numpy
+ matplotlib
++scikit-learn
++tenacity
++sentence-transformers
++openai>=1.30.0
++anthropic>=0.31.0
++jsonschema
+
+*** a/requirements-dev.txt
+--- b/requirements-dev.txt
+@@
+ pytest
+ pytest-mock
+ ruff
+ mypy
+ types-requests
++responses
+
+*** a/.env.example
+--- b/.env.example
+@@
+ # Provider keys (optional for stubs)
+ OPENAI_API_KEY=
+ ANTHROPIC_API_KEY=
+ 
+ # Cache & smoke
+ ECL_CACHE_TTL_HOURS=12
+ ECL_SMOKE_TIMEOUT_S=5.0
++
++# Embeddings
++ECL_EMBED_BACKEND=sentence-transformers   # or: openai, stub
++ECL_EMBED_MODEL=all-MiniLM-L6-v2          # used by sentence-transformers
++OPENAI_EMBED_MODEL=text-embedding-3-small # used if backend=openai
++
++# Calibration
++ECL_CALIBRATOR_PATH=.ecl_cache/calibrator.pkl
+
+*** a/.github/workflows/providers-smoke.yml
+--- b/.github/workflows/providers-smoke.yml
+@@
+   smoke:
+     runs-on: ubuntu-latest
+     timeout-minutes: 10
++    env:
++      HF_HOME: ${{ github.workspace }}/.hf_cache
+     strategy:
+       fail-fast: false
+@@
+       - name: Install deps
+         run: |
+           python -m pip install --upgrade pip
+           pip install -r requirements.txt -r requirements-dev.txt
++      - name: Cache HuggingFace models
++        uses: actions/cache@v4
++        with:
++          path: ./.hf_cache
++          key: hf-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+ 
+*** /dev/null
+--- b/.github/workflows/ci-calibration.yml
+@@
++name: Calibration & Eval
++on:
++  pull_request:
++    paths:
++      - 'src/ecl/calibration/**'
++      - 'benchmarks/**'
++      - 'scripts/calibrate.py'
++  workflow_dispatch: {}
++jobs:
++  eval:
++    runs-on: ubuntu-latest
++    env:
++      HF_HOME: ${{ github.workspace }}/.hf_cache
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with: { python-version: '3.11' }
++      - name: Cache HF
++        uses: actions/cache@v4
++        with:
++          path: ./.hf_cache
++          key: hf-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
++      - name: Install
++        run: |
++          python -m pip install --upgrade pip
++          pip install -r requirements.txt -r requirements-dev.txt
++      - name: Fit calibrator (toy) & plot overlays
++        run: |
++          python scripts/calibrate.py --fit-toy --save ${{ github.workspace }}/.ecl_cache/calibrator.pkl
++          make evaluate
++      - name: Upload artifacts
++        uses: actions/upload-artifact@v4
++        with:
++          name: reliability-overlays
++          path: benchmarks/results/
+ 
+*** a/src/ecl/adapters/base.py
+--- b/src/ecl/adapters/base.py
+@@
+-from typing import Protocol, runtime_checkable, Any, Dict, Tuple
+-from ..cache import get as cache_get, set as cache_set
++from typing import Protocol, runtime_checkable, Any, Dict, Tuple, Optional
++from ..cache import get as cache_get, set as cache_set
+ 
+@@
+ def generate_with_cache(adapter: BaseAdapter, prompt: str, **kwargs: Any) -> str:
+@@
+     out = adapter.generate(prompt, **kwargs)
+     cache_set(adapter.name, key, out)
+     return out
++
++def backoff_kwargs(timeout_s: float = 15.0, max_attempts: int = 3) -> Dict[str, Any]:
++    return {"timeout_s": timeout_s, "max_attempts": max_attempts}
+
+*** a/src/ecl/adapters/openai.py
+--- b/src/ecl/adapters/openai.py
+@@
+-from .base import BaseAdapter, registry
+-from .base import generate_with_cache
++from .base import BaseAdapter, registry, generate_with_cache, backoff_kwargs
++import os, time
++from tenacity import retry, wait_exponential_jitter, stop_after_attempt, retry_if_exception_type
++try:
++    from openai import OpenAI
++except Exception:  # lib optional at runtime
++    OpenAI = None
+ 
+ class OpenAIAdapter:
+     name = "openai"
+     def __init__(self) -> None:
+         self._key = os.getenv("OPENAI_API_KEY")
++        self._client = OpenAI(api_key=self._key) if (self._key and OpenAI) else None
+@@
+     def available(self) -> bool:
+-        return bool(self._key)
++        return bool(self._client)
+ 
+-    def generate(self, prompt: str, **kwargs: Any) -> str:
+-        # Stubbed minimal path; implement real API later
+-        # Keep output deterministic for tests without keys
+-        return f"[openai:stub] {prompt[:48]}"
++    @retry(wait=wait_exponential_jitter(initial=0.5, max=3.0),
++           stop=stop_after_attempt(3),
++           retry=retry_if_exception_type(Exception))
++    def _call(self, prompt: str, timeout_s: float) -> str:
++        # lowest-cost path: responses API w/ small tokens
++        resp = self._client.chat.completions.create(
++            model=os.getenv("OPENAI_CHAT_MODEL","gpt-4o-mini"),
++            messages=[{"role":"user","content":prompt}],
++            temperature=0.0,
++            max_tokens=32,
++            timeout=timeout_s,
++        )
++        return (resp.choices[0].message.content or "").strip()
++
++    def generate(self, prompt: str, **kwargs: Any) -> str:
++        if not self.available():
++            # deterministic stub if no key/client
++            return f"[openai:stub] {prompt[:48]}"
++        tmo = float(kwargs.get("timeout_s", 12.0))
++        return self._call(prompt, timeout_s=tmo)
+ 
+ class OpenAICached(OpenAIAdapter):
+     # Expose a caching wrapper entrypoint
+     def generate(self, prompt: str, **kwargs: Any) -> str:
+-        return super().generate(prompt, **kwargs)
++        bb = backoff_kwargs()
++        return generate_with_cache(self, prompt, **{**bb, **kwargs})
+ 
+ registry.register(OpenAICached())
+
+*** a/src/ecl/adapters/anthropic.py
+--- b/src/ecl/adapters/anthropic.py
+@@
+-from .base import BaseAdapter, registry
+-from .base import generate_with_cache
++from .base import BaseAdapter, registry, generate_with_cache, backoff_kwargs
++import os
++from tenacity import retry, wait_exponential_jitter, stop_after_attempt, retry_if_exception_type
++try:
++    import anthropic
++except Exception:
++    anthropic = None
+ 
+ class AnthropicAdapter:
+     name = "anthropic"
+     def __init__(self) -> None:
+         self._key = os.getenv("ANTHROPIC_API_KEY")
++        self._client = anthropic.Anthropic(api_key=self._key) if (self._key and anthropic) else None
+@@
+     def available(self) -> bool:
+-        return bool(self._key)
++        return bool(self._client)
+ 
+-    def generate(self, prompt: str, **kwargs: Any) -> str:
+-        # Stub minimal path for now
+-        return f"[anthropic:stub] {prompt[:48]}"
++    @retry(wait=wait_exponential_jitter(initial=0.5, max=3.0),
++           stop=stop_after_attempt(3),
++           retry=retry_if_exception_type(Exception))
++    def _call(self, prompt: str, timeout_s: float) -> str:
++        msg = self._client.messages.create(
++            model=os.getenv("ANTHROPIC_CHAT_MODEL","claude-3-haiku-20240307"),
++            max_tokens=64,
++            temperature=0.0,
++            messages=[{"role":"user","content":prompt}],
++            timeout=timeout_s,
++        )
++        # anthropic returns content list
++        content = msg.content[0].text if getattr(msg, "content", None) else ""
++        return (content or "").strip()
++
++    def generate(self, prompt: str, **kwargs: Any) -> str:
++        if not self.available():
++            return f"[anthropic:stub] {prompt[:48]}"
++        tmo = float(kwargs.get("timeout_s", 12.0))
++        return self._call(prompt, timeout_s=tmo)
+ 
+ class AnthropicCached(AnthropicAdapter):
+     def generate(self, prompt: str, **kwargs: Any) -> str:
+-        return super().generate(prompt, **kwargs)
++        bb = backoff_kwargs()
++        return generate_with_cache(self, prompt, **{**bb, **kwargs})
+ 
+ registry.register(AnthropicCached())
+
+*** a/src/ecl/similarity.py
+--- b/src/ecl/similarity.py
+@@
+-from typing import Tuple
+-def classify_similarity(a: str, b: str) -> Tuple[str, float]:
+-    """
+-    Stub similarity; deterministic for CI.
+-    """
+-    if a.strip().lower() == b.strip().lower():
+-        return ("equivalent", 0.99)
+-    if a[:12] == b[:12]:
+-        return ("related", 0.9)
+-    return ("different", 0.5)
++import os
++from typing import Tuple, Optional
++from .cache import get as cache_get, set as cache_set
++
++_BACKEND = os.getenv("ECL_EMBED_BACKEND", "sentence-transformers").lower()
++_ST_MODEL = os.getenv("ECL_EMBED_MODEL", "all-MiniLM-L6-v2")
++_OA_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
++
++_TH_EQ = 0.95
++_TH_REL = 0.85
++
++_st_model = None
++_oa_client = None
++
++def _ensure_backends():
++    global _st_model, _oa_client
++    if _BACKEND == "sentence-transformers" and _st_model is None:
++        from sentence_transformers import SentenceTransformer
++        _st_model = SentenceTransformer(_ST_MODEL)
++    elif _BACKEND == "openai" and _oa_client is None:
++        from openai import OpenAI
++        _oa_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
++
++def _embed(texts):
++    key = ("embed", _BACKEND, texts)
++    hit = cache_get("embeddings", key)
++    if hit is not None:
++        return hit
++    if _BACKEND == "sentence-transformers":
++        _ensure_backends()
++        vecs = _st_model.encode(texts, normalize_embeddings=True).tolist()
++    elif _BACKEND == "openai":
++        _ensure_backends()
++        out = _oa_client.embeddings.create(
++            model=_OA_EMBED_MODEL, input=texts
++        )
++        vecs = [d.embedding for d in out.data]
++    else:
++        # deterministic stub
++        vecs = [[0.0, 1.0]] * len(texts)
++    cache_set("embeddings", key, vecs)
++    return vecs
++
++def _cos(u, v):
++    # u and v are normalized when ST backend; for OA compute explicitly
++    import math
++    s = sum(ux*vx for ux, vx in zip(u, v))
++    if _BACKEND == "openai":
++        nu = math.sqrt(sum(ux*ux for ux in u)) or 1.0
++        nv = math.sqrt(sum(vx*vx for vx in v)) or 1.0
++        s = s/(nu*nv)
++    return max(min(s, 1.0), -1.0)
++
++def classify_similarity(a: str, b: str) -> Tuple[str, float]:
++    """
++    Embedding-based semantic similarity with thresholds:
++    - cosine >= 0.95 => 'equivalent'
++    - 0.85..0.95     => 'related'
++    - else           => 'different'
++    """
++    a = (a or "").strip()
++    b = (b or "").strip()
++    if not a or not b:
++        return ("different", 0.0)
++    vecs = _embed([a, b])
++    sim = _cos(vecs[0], vecs[1])
++    if sim >= _TH_EQ:
++        return ("equivalent", float(sim))
++    if sim >= _TH_REL:
++        return ("related", float(sim))
++    return ("different", float(sim))
+
+*** a/src/ecl/calibration/isotonic.py
+--- b/src/ecl/calibration/isotonic.py
+@@
+-from typing import Iterable, Tuple
+-def calibrate(scores: Iterable[float]) -> Iterable[float]:
+-    # stub: gently shrink toward 0.5
+-    return [0.5 + 0.5*(s-0.5) for s in scores]
++from typing import Iterable, Tuple, List, Optional
++import numpy as np
++try:
++    from sklearn.isotonic import IsotonicRegression
++except Exception:
++    IsotonicRegression = None
++import pickle, os
++
++def fit_isotonic(y_score: Iterable[float], y_true: Iterable[int]):
++    if IsotonicRegression is None:
++        raise RuntimeError("sklearn not available for isotonic regression")
++    iso = IsotonicRegression(out_of_bounds="clip")
++    iso.fit(np.array(list(y_score)), np.array(list(y_true)))
++    return iso
++
++def save_calibrator(cal, path: str) -> None:
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    with open(path, "wb") as f:
++        pickle.dump(cal, f)
++
++def load_calibrator(path: str):
++    if not os.path.exists(path):
++        return None
++    with open(path, "rb") as f:
++        return pickle.load(f)
++
++def calibrate_with(iso, scores: Iterable[float]) -> List[float]:
++    arr = np.array(list(scores))
++    return list(iso.predict(arr))
+
+*** a/src/ecl/calibration/platt.py
+--- b/src/ecl/calibration/platt.py
+@@
+-from typing import Iterable
+-def calibrate(scores: Iterable[float]) -> Iterable[float]:
+-    # stub sigmoid-ish shrink
+-    import math
+-    return [1/(1+math.exp(-4*(s-0.5))) for s in scores]
++from typing import Iterable, List
++import numpy as np
++try:
++    from sklearn.linear_model import LogisticRegression
++except Exception:
++    LogisticRegression = None
++import pickle, os
++
++def fit_platt(y_score: Iterable[float], y_true: Iterable[int]):
++    if LogisticRegression is None:
++        raise RuntimeError("sklearn not available for Platt scaling")
++    X = np.array(list(y_score)).reshape(-1,1)
++    y = np.array(list(y_true))
++    lr = LogisticRegression(max_iter=1000)
++    lr.fit(X, y)
++    return lr
++
++def save_calibrator(cal, path: str) -> None:
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    with open(path, "wb") as f:
++        pickle.dump(cal, f)
++
++def load_calibrator(path: str):
++    if not os.path.exists(path):
++        return None
++    with open(path, "rb") as f:
++        return pickle.load(f)
++
++def calibrate_with(lr, scores: Iterable[float]) -> List[float]:
++    X = np.array(list(scores)).reshape(-1,1)
++    return list(lr.predict_proba(X)[:,1])
+
+*** /dev/null
+--- b/scripts/calibrate.py
+@@
++from __future__ import annotations
++import argparse, os, json, random
++import numpy as np
++from src.ecl.calibration.isotonic import fit_isotonic, save_calibrator as save_iso
++from src.ecl.calibration.platt import fit_platt, save_calibrator as save_platt
++
++def toy_dataset(n=200, seed=42):
++    random.seed(seed); np.random.seed(seed)
++    y_true = np.random.binomial(1, 0.5, size=n)
++    # uncalibrated scores with slight overconfidence
++    y_score = np.clip(np.random.beta(2,2,size=n), 0.01, 0.99)
++    return y_score.tolist(), y_true.tolist()
++
++if __name__ == "__main__":
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--fit-toy", action="store_true")
++    ap.add_argument("--save", required=True)
++    ap.add_argument("--method", choices=["isotonic","platt"], default="isotonic")
++    args = ap.parse_args()
++    if args.fit-toy:
++        scores, labels = toy_dataset()
++    else:
++        raise SystemExit("Provide dataset loader or --fit-toy")
++    if args.method == "isotonic":
++        cal = fit_isotonic(scores, labels)
++        save_iso(cal, args.save)
++    else:
++        cal = fit_platt(scores, labels)
++        save_platt(cal, args.save)
++    print(json.dumps({"saved": args.save, "method": args.method}))
+
+*** a/src/ecl/provenance/prov.py
+--- b/src/ecl/provenance/prov.py
+@@
+-from typing import Dict, Any
+-import hashlib, json
++from typing import Dict, Any, List
++import hashlib, json, time
+ 
+ _HASH_VERSION = "prov-hash-v1"
+ 
+ def stable_claim_id(text: str) -> str:
+@@
+-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
++    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+ 
+ def prov_json_for(claims: Any, models: Any) -> Dict[str, Any]:
+-    # minimal PROV-like structure
+-    entities = []
+-    for c in claims:
+-        entities.append({"id": c.get("id"), "type": "entity", "attrs": {"text": c.get("text")}})
+-    return {"entities": entities, "agents": list(models), "hash_version": _HASH_VERSION}
++    """
++    W3C PROV-inspired JSON:
++      - entities: claims + outputs
++      - agents:   models/providers
++      - activities: verification step
++    """
++    ts = int(time.time()*1000)
++    entities: List[Dict[str,Any]] = []
++    for c in claims:
++        entities.append({
++            "id": c.get("id"),
++            "type": "prov:Entity",
++            "label": "claim",
++            "attrs": {"text": c.get("text")}
++        })
++    activity_id = f"verify-{ts}"
++    activity = {"id": activity_id, "type": "prov:Activity", "label": "verification"}
++    agents = [{"id": m, "type": "prov:Agent"} for m in (models or [])]
++    return {
++        "entities": entities,
++        "activities": [activity],
++        "agents": agents,
++        "wasGeneratedBy": [{"entity": c["id"], "activity": activity_id} for c in entities],
++        "wasAssociatedWith": [{"activity": activity_id, "agent": ag["id"]} for ag in agents],
++        "hash_version": _HASH_VERSION,
++    }
+
+*** a/src/ecl/server/app.py
+--- b/src/ecl/server/app.py
+@@
+ from fastapi import FastAPI
+ from pydantic import BaseModel
+ from typing import List, Dict, Any
+ import time
+ from ..provenance.prov import stable_claim_id, prov_json_for
+-from ..similarity import classify_similarity
++from ..similarity import classify_similarity
+ from ..calibration import isotonic as iso
+ from ..calibration import platt as pl
+@@
+ app = FastAPI(title="ECL", version="0.2.0")
+ 
+ class VerifyRequest(BaseModel):
+     prompt: str | None = None
+ 
+ class Claim(BaseModel):
+     text: str
+     id: str
+ 
+ class VerifyResponse(BaseModel):
+     ecs: float
+     claims: List[Claim]
+     consensus: Dict[str, Any]
+     provenance: Dict[str, Any]
+     errors: List[Dict[str, Any]]
+     timing_ms: Dict[str, int]
++    x_schema_version: str | None = "1.0"
+ 
+ @app.get("/health")
+ def health():
+     from ..cache import stats
+     return {"status": "ok", "cache": stats()}
+ 
+ @app.post("/verify", response_model=VerifyResponse)
+ def verify(req: VerifyRequest | None = None):
+     t0 = time.time()
+     errors: List[Dict[str, Any]] = []
+@@
+     claims = [{"text": text, "id": stable_claim_id(text)} for text in claim_texts]
+     models = ["stub:gpt","stub:claude"]  # real adapters used in v0.2 phase separately
+     # toy consensus score via pairwise similarity of first claim text
+     sim_label, sim_score = classify_similarity(claims[0]["text"], claims[0]["text"])
+     consensus = {"models": models, "score": 1.0, "details": [{"sim": sim_label, "score": sim_score}]}
+     ecs_uncal = 0.55
+-    ecs = ecs_uncal
++    # apply calibrator if present
++    calib_path = os.getenv("ECL_CALIBRATOR_PATH", ".ecl_cache/calibrator.pkl")
++    ecs = ecs_uncal
++    iso_cal = None
++    try:
++        iso_cal = iso.load_calibrator(calib_path)
++        if iso_cal:
++            ecs = iso.calibrate_with(iso_cal, [ecs_uncal])[0]
++    except Exception as e:
++        errors.append({"code":"CALIBRATION_ERROR","message":str(e)})
+     prov = {"prov_json": prov_json_for(claims, models), "hash_version": "prov-hash-v1"}
+     timing = {"total": int((time.time()-t0)*1000)}
+-    return {"ecs": ecs, "claims": claims, "consensus": consensus, "provenance": prov, "errors": errors, "timing_ms": timing}
++    return {"ecs": ecs, "claims": claims, "consensus": consensus, "provenance": prov, "errors": errors, "timing_ms": timing, "x_schema_version":"1.0"}
+
+*** a/tests/test_similarity.py
+--- b/tests/test_similarity.py
+@@
+-from src.ecl.similarity import classify_similarity
++import os
++os.environ.setdefault("ECL_EMBED_BACKEND","stub")
++from src.ecl.similarity import classify_similarity
+@@
+ def test_equivalent():
+     label, score = classify_similarity("abc", "abc")
+     assert label == "equivalent"
+     assert score >= 0.95
+
+*** /dev/null
+--- b/tests/test_adapters.py
+@@
++import os, types
++import pytest
++from src.ecl.adapters.openai import OpenAIAdapter
++from src.ecl.adapters.anthropic import AnthropicAdapter
++
++def test_openai_stub_without_key(monkeypatch):
++    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
++    a = OpenAIAdapter()
++    assert not a.available()
++    out = a.generate("hello world")
++    assert out.startswith("[openai:stub]")
++
++def test_anthropic_stub_without_key(monkeypatch):
++    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
++    a = AnthropicAdapter()
++    assert not a.available()
++    out = a.generate("hello world")
++    assert out.startswith("[anthropic:stub]")
++
+*** /dev/null
+--- b/tests/test_calibration.py
+@@
++import os
++from src.ecl.calibration.isotonic import fit_isotonic, calibrate_with
++from src.ecl.calibration.platt import fit_platt, calibrate_with as platt_with
++
++def test_isotonic_fit_and_apply():
++    scores = [0.1,0.2,0.8,0.9]
++    labels = [0,0,1,1]
++    cal = fit_isotonic(scores, labels)
++    out = calibrate_with(cal, [0.2,0.8])
++    assert len(out)==2
++    assert 0.0 <= out[0] <= 1.0
++
++def test_platt_fit_and_apply():
++    scores = [0.1,0.2,0.8,0.9]
++    labels = [0,0,1,1]
++    cal = fit_platt(scores, labels)
++    out = platt_with(cal, [0.2,0.8])
++    assert len(out)==2
++    assert 0.0 <= out[0] <= 1.0
+
+*** a/docs/api.md
+--- b/docs/api.md
+@@
+ POST /verify
+ Returns claims, consensus, calibrated ECS, provenance (PROV-JSON), errors, and timing.
+ Schema: See schemas/verify.response.json
++Response includes header field `x_schema_version` for drift tracking.
+ 
+*** a/docs/tutorial.md
+--- b/docs/tutorial.md
+@@
+ 4. Run toy evaluation
+ bash
+ make evaluate
+ open benchmarks/results/reliability.png
++
++5. Fit a calibrator (toy) and re-run
++bash
++python scripts/calibrate.py --fit-toy --save .ecl_cache/calibrator.pkl --method isotonic
++make evaluate
++open benchmarks/results/reliability.png
+@@
+ 7. Open a PR
+ CI will post ECE before/after and fail on regressions.
+ 
+*** a/docs/bots.md
+--- b/docs/bots.md
+@@
+ ### Providers Smoke (latency & availability)
+@@
+ Secrets required to hit real providers:
+ 
+ - `OPENAI_API_KEY`
+ - `ANTHROPIC_API_KEY`
++
++### Calibration Bot (overlay plots)
++Calibration CI fits a toy calibrator and regenerates reliability curves with **before/after overlays**, then uploads artifacts.
+ 
+*** a/schemas/verify.response.json
+--- b/schemas/verify.response.json
+@@
+   "type": "object",
+   "required": ["ecs","claims","consensus","provenance","errors","timing_ms"],
+   "properties": {
+     "ecs": {"type":"number"},
+@@
+     "timing_ms": {"type":"object"},
++    "x_schema_version": {"type":["string","null"]}
+   }
+ }
+PATCH

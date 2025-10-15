@@ -52,6 +52,7 @@
         "total": { "type": "integer", "minimum": 0 },
         "adapters": { "type": "object" }
       }
-    }
+    },
+    "x_schema_version": { "type": ["string", "null"] }
   }
 }

@@ -2,7 +2,7 @@ from fastapi import FastAPI, Response, Request
 from fastapi.responses import JSONResponse
 import json, time
 from pathlib import Path
-from ..provenance.prov import prov_json_for_claims, HASH_VERSION
+from ..provenance.prov import prov_json_for, HASH_VERSION
 from ..similarity import classify_similarity
 from ..calibration.isotonic import IsotonicCalibrator
 from ..cache import FileCache
@@ -44,7 +44,7 @@ def verify():
     t0 = time.time()
     # minimal deterministic vertical slice response
     claims = [{"text": "httpOnly cookies mitigate XSS token theft"}]
-    prov = prov_json_for_claims(claims)
+    prov = prov_json_for(claims)
     # fake consensus using similarity (placeholder)
     _, sim = classify_similarity("A", "A")
     consensus = {"models": ["stub:gpt", "stub:claude"], "score": sim, "details": [{"model":"stub:gpt"}, {"model":"stub:claude"}]}
@@ -56,6 +56,7 @@ def verify():
         "consensus": consensus,
         "provenance": {"prov_json": prov, "hash_version": HASH_VERSION},
         "errors": [],
-        "timing_ms": {"total": int((time.time()-t0)*1000)}
+        "timing_ms": {"total": int((time.time()-t0)*1000)},
+        "x_schema_version": "1.0",
     }
     return body

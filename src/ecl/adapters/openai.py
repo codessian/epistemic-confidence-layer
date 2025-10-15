@@ -11,7 +11,7 @@ try:
 except Exception:
     OpenAI = None  # graceful fallback
 
-from .base import BaseAdapter, registry
+from .base import BaseAdapter
 from ..errors import AdapterError, normalize_error
 from ..adapter_metrics import record_adapter_event
 
@@ -28,14 +28,20 @@ class OpenAIAdapter(BaseAdapter):
         self._max_elapsed_s = float(os.getenv("ECL_PROVIDER_MAX_ELAPSED_S", "16.0"))
         self._base_delay_s = float(os.getenv("ECL_PROVIDER_BASE_DELAY_S", "0.6"))
         self._jitter_s = float(os.getenv("ECL_PROVIDER_JITTER_S", "0.2"))
-        try:
-            self._client = OpenAI(api_key=api_key, timeout=self._timeout_s) if (OpenAI and api_key) else None
-        except Exception:
-            self._client = OpenAI(api_key=api_key) if (OpenAI and api_key) else None
+        # Defer client creation to avoid import-time failures across SDK versions
+        self._client = None
+        self._has_key = bool(OpenAI) and bool(api_key)
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
+        # Lazily create client on first real call
         if self._client is None:
-            return f"[openai-stub] {prompt[:200]}"
+            if not self._has_key:
+                return f"[openai-stub] {prompt[:200]}"
+            try:
+                self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            except Exception:
+                # Fallback: remain in stub mode if SDK init fails
+                return f"[openai-stub] {prompt[:200]}"
         model = kwargs.get("model", self.model_id)
         temperature = float(kwargs.get("temperature", 0.2))
         max_tokens = int(kwargs.get("max_tokens", 256))
@@ -92,8 +98,7 @@ class OpenAIAdapter(BaseAdapter):
         raise (last_err or AdapterError(code="PROVIDER_ERROR", hint="Exceeded retry/time budget.", provider="openai"))
 
     def is_available(self) -> bool:
-        return self._client is not None
+        return self._has_key
 
 
-# Register in the global registry for smoke tests and usage
-registry.register("openai", OpenAIAdapter())
+# Registration is optional and should be done by integrators to avoid import-time side effects.

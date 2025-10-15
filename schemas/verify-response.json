@@ -121,6 +121,9 @@
           "type": "integer"
         }
       }
+    },
+    "x_schema_version": {
+      "type": ["string", "null"]
     }
   }
 }
