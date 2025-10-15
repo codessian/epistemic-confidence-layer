@@ -1,7 +1,7 @@
 pytest==8.3.3
 ruff==0.6.9
 mypy==1.11.2
-requests==2.32.3
+requests==2.32.4
 matplotlib==3.9.2
 numpy==2.1.2
 cycler==0.12.1
