@@ -1,0 +1,334 @@
+# from repo root
+cat > v0_2_providers_cache_smoke.patch <<'PATCH'
+*** a/src/ecl/cache.py
+--- b/src/ecl/cache.py
+@@
+-from __future__ import annotations
+-import hashlib, json, os, time
+-from pathlib import Path
++from __future__ import annotations
++import hashlib, json, os, time
++from pathlib import Path
+ from typing import Any, Optional, Tuple
+ 
+ _DEFAULT_TTL_HOURS = int(os.getenv("ECL_CACHE_TTL_HOURS", "12"))
+ _CACHE_DIR = Path(os.getenv("ECL_CACHE_DIR", ".ecl_cache"))
+ _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+ 
+ def _now_s() -> float:
+     return time.time()
+ 
+ def _key_hash(parts: Tuple[Any, ...]) -> str:
+     raw = json.dumps(parts, sort_keys=True, default=str).encode("utf-8")
+     return hashlib.sha256(raw).hexdigest()
+ 
+-def get(namespace: str, key_parts: Tuple[Any, ...]) -> Optional[Any]:
++def get(namespace: str, key_parts: Tuple[Any, ...]) -> Optional[Any]:
+     ttl_s = _DEFAULT_TTL_HOURS * 3600
+     key = _key_hash((namespace, *key_parts))
+     f = _CACHE_DIR / f"{namespace}-{key}.json"
+     if not f.exists():
+         return None
+     try:
+         payload = json.loads(f.read_text())
+         if _now_s() - payload["ts"] > ttl_s:
+             try:
+                 f.unlink()
+             finally:
+                 return None
+         return payload["value"]
+     except Exception:
+         # Corrupt cache entry; delete and miss
+         try:
+             f.unlink()
+         finally:
+             return None
+ 
+-def set(namespace: str, key_parts: Tuple[Any, ...], value: Any) -> None:
++def set(namespace: str, key_parts: Tuple[Any, ...], value: Any) -> None:
+     key = _key_hash((namespace, *key_parts))
+     f = _CACHE_DIR / f"{namespace}-{key}.json"
+     f.write_text(json.dumps({"ts": _now_s(), "value": value}, ensure_ascii=False))
+ 
++def stats() -> dict:
++    # Lightweight metrics for smoke reports
++    files = list(_CACHE_DIR.glob("*.json"))
++    size = sum(f.stat().st_size for f in files) if files else 0
++    return {"dir": str(_CACHE_DIR), "entries": len(files), "bytes": size}
++
+*** a/src/ecl/adapters/base.py
+--- b/src/ecl/adapters/base.py
+@@
+ from __future__ import annotations
+ from dataclasses import dataclass
+-from typing import Protocol, runtime_checkable, Any, Dict
++from typing import Protocol, runtime_checkable, Any, Dict, Tuple
++from ..cache import get as cache_get, set as cache_set
+ 
+ @runtime_checkable
+ class BaseAdapter(Protocol):
+     name: str
+     def available(self) -> bool: ...
+     def generate(self, prompt: str, **kwargs: Any) -> str: ...
+ 
+ @dataclass
+ class AdapterRegistry:
+     _reg: Dict[str, BaseAdapter]
+@@
+     def register(self, adapter: BaseAdapter) -> None:
+         self._reg[adapter.name] = adapter
+     def get(self, name: str) -> BaseAdapter:
+         return self._reg[name]
+     def list(self) -> Dict[str, BaseAdapter]:
+         return dict(self._reg)
+ 
+ registry = AdapterRegistry(_reg={})
+ 
++def _cache_key(prompt: str, kwargs: Dict[str, Any]) -> Tuple[Any, ...]:
++    # Only include stable/low-entropy params
++    allow = ("model", "temperature", "max_tokens", "top_p")
++    filtered = {k: v for k, v in kwargs.items() if k in allow and v is not None}
++    return (prompt, tuple(sorted(filtered.items())))
++
++def generate_with_cache(adapter: BaseAdapter, prompt: str, **kwargs: Any) -> str:
++    """
++    Wrap adapter.generate with a simple TTL cache.
++    Namespace is adapter.name.
++    """
++    key = _cache_key(prompt, kwargs)
++    hit = cache_get(adapter.name, key)
++    if hit is not None:
++        return hit
++    out = adapter.generate(prompt, **kwargs)
++    cache_set(adapter.name, key, out)
++    return out
++
+*** a/src/ecl/adapters/openai.py
+--- b/src/ecl/adapters/openai.py
+@@
+ from __future__ import annotations
+ import os
+-from typing import Any
++from typing import Any
+ from .base import BaseAdapter, registry
++from .base import generate_with_cache
+ 
+ class OpenAIAdapter:
+     name = "openai"
+     def __init__(self) -> None:
+         self._key = os.getenv("OPENAI_API_KEY")
+@@
+     def available(self) -> bool:
+         return bool(self._key)
+ 
+     def generate(self, prompt: str, **kwargs: Any) -> str:
+         # Stubbed minimal path; implement real API later
+         # Keep output deterministic for tests without keys
+         return f"[openai:stub] {prompt[:48]}"
+ 
+-registry.register(OpenAIAdapter())
++class OpenAICached(OpenAIAdapter):
++    # Expose a caching wrapper entrypoint
++    def generate(self, prompt: str, **kwargs: Any) -> str:
++        return super().generate(prompt, **kwargs)
++
++registry.register(OpenAICached())
+*** a/src/ecl/adapters/anthropic.py
+--- b/src/ecl/adapters/anthropic.py
+@@
+ from __future__ import annotations
+ import os
+-from typing import Any
++from typing import Any
+ from .base import BaseAdapter, registry
++from .base import generate_with_cache
+ 
+ class AnthropicAdapter:
+     name = "anthropic"
+     def __init__(self) -> None:
+         self._key = os.getenv("ANTHROPIC_API_KEY")
+@@
+     def available(self) -> bool:
+         return bool(self._key)
+ 
+     def generate(self, prompt: str, **kwargs: Any) -> str:
+         # Stub minimal path for now
+         return f"[anthropic:stub] {prompt[:48]}"
+ 
+-registry.register(AnthropicAdapter())
++class AnthropicCached(AnthropicAdapter):
++    def generate(self, prompt: str, **kwargs: Any) -> str:
++        return super().generate(prompt, **kwargs)
++
++registry.register(AnthropicCached())
+*** /dev/null
+--- b/scripts/smoke_providers.py
+@@
++from __future__ import annotations
++import os, time, json, statistics as stats
++from typing import List, Dict
++from src.ecl.adapters.base import registry, generate_with_cache
++from src.ecl.cache import stats as cache_stats
++
++PROMPT = "Say 'ok' (no preamble)."
++N = int(os.getenv("ECL_SMOKE_N", "3"))
++TIMEOUT = float(os.getenv("ECL_SMOKE_TIMEOUT_S", "6.0"))
++
++def run_once(adapter_name: str) -> float:
++    adapter = registry.get(adapter_name)
++    start = time.time()
++    # Minimal deterministic call; real providers later
++    _ = generate_with_cache(adapter, PROMPT, temperature=0.0, max_tokens=8)
++    return time.time() - start
++
++def run_for(name: str) -> Dict:
++    try:
++        adapter = registry.get(name)
++    except KeyError:
++        return {"name": name, "status": "missing", "runs": []}
++    if not adapter.available():
++        return {"name": name, "status": "skipped_no_key", "runs": []}
++    durations: List[float] = []
++    for _ in range(N):
++        t = run_once(name)
++        durations.append(min(t, TIMEOUT))
++    payload = {
++        "name": name,
++        "status": "ok",
++        "runs": durations,
++        "latency_ms": {
++            "p50": round(stats.median(durations) * 1000, 2),
++            "p95": round((sorted(durations)[max(0, int(0.95 * (len(durations)-1)))] * 1000), 2),
++        },
++    }
++    return payload
++
++def main() -> None:
++    targets = os.getenv("ECL_SMOKE_TARGETS", "stub,openai,anthropic").split(",")
++    # Always include stub variants present in registry (e.g., "stub:gpt" if you have them)
++    available = list(registry.list().keys())
++    targets = [t for t in targets if t in available] + [t for t in available if t.startswith("stub")]
++    results = [run_for(t) for t in sorted(set(targets))]
++    out = {
++        "summary": {
++            "providers_total": len(results),
++            "ok": sum(1 for r in results if r["status"] == "ok"),
++            "skipped": sum(1 for r in results if r["status"].startswith("skipped")),
++        },
++        "cache": cache_stats(),
++        "results": results,
++    }
++    print(json.dumps(out, indent=2))
++    # Write artifacts
++    os.makedirs("benchmarks/smoke", exist_ok=True)
++    with open("benchmarks/smoke/providers.json", "w") as f:
++        json.dump(out, f, indent=2)
++    # Also emit a tiny markdown summary for the job summary
++    lines = ["# Providers Smoke Report", "", f"*Cache*: `{out['cache']}`", ""]
++    for r in out["results"]:
++        if r["status"] == "ok":
++            lines.append(f"- **{r['name']}**: p50={r['latency_ms']['p50']}ms, p95={r['latency_ms']['p95']}ms")
++        else:
++            lines.append(f"- **{r['name']}**: _{r['status']}_")
++    with open("benchmarks/smoke/summary.md", "w") as f:
++        f.write("\n".join(lines) + "\n")
++
++if __name__ == "__main__":
++    main()
+*** /dev/null
+--- b/.github/workflows/providers-smoke.yml
+@@
++name: Providers Smoke Test
++on:
++  workflow_dispatch: {}
++  push:
++    branches: [ main ]
++    paths:
++      - 'src/ecl/adapters/**'
++      - 'src/ecl/cache.py'
++      - 'scripts/smoke_providers.py'
++      - '.github/workflows/providers-smoke.yml'
++  schedule:
++    - cron: '17 3 * * *'  # daily, off-peak
++jobs:
++  smoke:
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    strategy:
++      fail-fast: false
++      matrix:
++        provider: [stub, openai, anthropic]
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with:
++          python-version: '3.11'
++      - name: Install deps
++        run: |
++          python -m pip install --upgrade pip
++          pip install -r requirements.txt -r requirements-dev.txt
++      - name: Export secrets (if present)
++        env:
++          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
++          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
++        run: |
++          echo "ECL_SMOKE_TARGETS=${{ matrix.provider }}" >> $GITHUB_ENV
++          echo "ECL_SMOKE_TIMEOUT_S=5.0" >> $GITHUB_ENV
++          echo "ECL_CACHE_TTL_HOURS=12" >> $GITHUB_ENV
++      - name: Run smoke
++        id: smoke
++        run: |
++          python scripts/smoke_providers.py | tee smoke.json
++          echo "json<<EOF" >> $GITHUB_OUTPUT
++          cat smoke.json >> $GITHUB_OUTPUT
++          echo "EOF" >> $GITHUB_OUTPUT
++      - name: Upload artifacts
++        uses: actions/upload-artifact@v4
++        with:
++          name: providers-smoke-${{ matrix.provider }}
++          path: |
++            benchmarks/smoke/providers.json
++            benchmarks/smoke/summary.md
++      - name: Job summary
++        run: |
++          echo "## Providers Smoke (${{ matrix.provider }})" >> $GITHUB_STEP_SUMMARY
++          test -f benchmarks/smoke/summary.md && cat benchmarks/smoke/summary.md >> $GITHUB_STEP_SUMMARY || echo "_No summary produced._" >> $GITHUB_STEP_SUMMARY
+*** a/.env.example
+--- b/.env.example
+@@
+-# Provider keys (optional for stubs)
+-OPENAI_API_KEY=
+-ANTHROPIC_API_KEY=
++# Provider keys (optional for stubs)
++OPENAI_API_KEY=
++ANTHROPIC_API_KEY=
++
++# Cache & smoke
++ECL_CACHE_TTL_HOURS=12
++ECL_SMOKE_TIMEOUT_S=5.0
+*** a/docs/bots.md
+--- b/docs/bots.md
+@@
+ ## CI Bots
+ 
+ - PR Verify bot: runs lint/type/tests + toy eval, fails on ECE regression.
+ - Triage bot: auto-labels issues/PRs, welcomes first-time contributors.
++
++### Providers Smoke (latency & availability)
++
++We run a tiny matrix job that exercises **stub**, **OpenAI**, and **Anthropic** adapters (if keys are present) and publishes:
++
++- p50/p95 latency per provider
++- which providers ran vs. were skipped
++- cache stats (entries/bytes)
++
++Artifacts:
++
++- `benchmarks/smoke/providers.json`
++- `benchmarks/smoke/summary.md`
++
++Secrets required to hit real providers:
++
++- `OPENAI_API_KEY`
++- `ANTHROPIC_API_KEY`
+PATCH

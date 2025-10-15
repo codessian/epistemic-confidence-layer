@@ -1,8 +1,8 @@
-"""Anthropic adapter implementation with env-based stub fallback."""
+"""Anthropic adapter implementation with env-based stub fallback and registry."""
 
 import os
 from typing import Any
-from .base import BaseAdapter
+from .base import BaseAdapter, registry
 
 try:  # pragma: no cover
     import anthropic
@@ -39,3 +39,6 @@ class AnthropicAdapter(BaseAdapter):
 
     def is_available(self) -> bool:
         return self._client is not None
+
+# Register in the global registry for smoke tests and usage
+registry.register("anthropic", AnthropicAdapter())

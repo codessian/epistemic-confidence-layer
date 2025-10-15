@@ -1,0 +1,51 @@
+name: Providers Smoke Test
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/ecl/adapters/**'
+      - 'src/ecl/cache.py'
+      - 'scripts/smoke_providers.py'
+      - '.github/workflows/providers-smoke.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run smoke tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          ECL_SMOKE_TARGETS: 'stub,openai,anthropic'
+          ECL_SMOKE_TIMEOUT_S: '6.0'
+        run: |
+          python scripts/smoke_providers.py | tee smoke_output.json
+          test -f benchmarks/smoke/providers.json
+          test -f benchmarks/smoke/summary.md
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: providers-smoke
+          path: |
+            benchmarks/smoke/providers.json
+            benchmarks/smoke/summary.md
+            smoke_output.json
+      - name: Job Summary
+        run: |
+          echo "# Providers Smoke Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat benchmarks/smoke/summary.md >> $GITHUB_STEP_SUMMARY

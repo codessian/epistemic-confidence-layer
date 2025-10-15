@@ -1,8 +1,8 @@
-"""OpenAI adapter implementation with env-based stub fallback."""
+"""OpenAI adapter implementation with env-based stub fallback and registry."""
 
 import os
 from typing import Any
-from .base import BaseAdapter
+from .base import BaseAdapter, registry
 
 try:  # pragma: no cover
     from openai import OpenAI
@@ -34,3 +34,6 @@ class OpenAIAdapter(BaseAdapter):
 
     def is_available(self) -> bool:
         return self._client is not None
+
+# Register in the global registry for smoke tests and usage
+registry.register("openai", OpenAIAdapter())
