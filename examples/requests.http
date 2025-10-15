@@ -1,0 +1,33 @@
+### ECL API Examples
+### Make sure server is running: uvicorn src.ecl.server.app:app --reload
+
+### Basic verification request
+POST http://127.0.0.1:8000/verify
+Content-Type: application/json
+
+{
+  "prompt": "Is Knysna in the Western Cape of South Africa?",
+  "models": ["stub:gpt", "stub:claude"]
+}
+
+###
+
+### Question with multiple claims
+POST http://127.0.0.1:8000/verify
+Content-Type: application/json
+
+{
+  "prompt": "Paris is the capital of France. It has a population of over 2 million people.",
+  "models": ["stub:gpt", "stub:claude", "stub:gemini"]
+}
+
+###
+
+### Single model verification
+POST http://127.0.0.1:8000/verify
+Content-Type: application/json
+
+{
+  "prompt": "The Earth orbits around the Sun?",
+  "models": ["stub:gpt"]
+}

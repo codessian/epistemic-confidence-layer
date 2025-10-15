@@ -1,6 +1,7 @@
 # Epistemic Confidence Layer (ECL)
 
 [![CI](https://github.com/codessian/epistemic-confidence-layer/actions/workflows/ci.yml/badge.svg)](https://github.com/codessian/epistemic-confidence-layer/actions/workflows/ci.yml)
+[![Docs](https://github.com/codessian/epistemic-confidence-layer/actions/workflows/docs.yml/badge.svg)](https://codessian.github.io/epistemic-confidence-layer/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](#)
 
@@ -20,7 +21,9 @@ pip install -r requirements.txt -r requirements-dev.txt
 uvicorn src.ecl.server.app:app --reload
 ```
 
-Then:
+▶️ **Try the API:** Open http://127.0.0.1:8000/docs for interactive Swagger UI
+
+Then test with curl:
 ```bash
 curl -X POST http://127.0.0.1:8000/verify \
   -H "Content-Type: application/json" \
@@ -46,6 +49,7 @@ Prompt → Claim Extraction → Cross-Model Comparison → Contradiction Detecti
 ```
 
 - More: [`docs/overview.md`](docs/overview.md), [`docs/architecture.md`](docs/architecture.md), [`docs/api.md`](docs/api.md), [`docs/calibration.md`](docs/calibration.md)
+- **📚 Full Documentation:** https://codessian.github.io/epistemic-confidence-layer/
 
 ## Calibration Target
 - **ECE ≤ 0.10** on the project's evaluation harness (see `benchmarks/`).

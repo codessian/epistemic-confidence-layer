@@ -1,0 +1,43 @@
+site_name: Epistemic Confidence Layer
+site_url: https://codessian.github.io/epistemic-confidence-layer/
+repo_url: https://github.com/codessian/epistemic-confidence-layer
+repo_name: codessian/epistemic-confidence-layer
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+nav:
+  - Overview: docs/overview.md
+  - Architecture: docs/architecture.md
+  - API: docs/api.md
+  - Calibration: docs/calibration.md
+  - Governance: docs/governance.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details

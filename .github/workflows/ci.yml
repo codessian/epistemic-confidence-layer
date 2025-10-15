@@ -43,8 +43,18 @@ jobs:
         run: |
           python benchmarks/scripts/plot_reliability.py --input benchmarks/tasks/toy.jsonl --output benchmarks/results/reliability.png
 
+      - name: Generate SBOM
+        run: |
+          python -m cyclonedx.bom.requirements requirements.txt -o sbom.json
+
       - name: Upload reliability curve
         uses: actions/upload-artifact@v4
         with:
           name: reliability-curve
           path: benchmarks/results/reliability.png
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
