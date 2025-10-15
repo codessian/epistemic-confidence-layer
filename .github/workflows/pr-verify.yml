@@ -1,0 +1,44 @@
+name: PR Verify (tests, eval, ECE)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+  checks: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          python -m pip install -U pip wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Lint + Type + Tests
+        run: |
+          ruff check .
+          mypy src --explicit-package-bases
+          pytest -q
+      - name: Evaluate (toy)
+        run: |
+          make evaluate
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: reliability-artifacts
+          path: |
+            benchmarks/results/reliability.png
+            benchmarks/results/metrics.json
+      - name: Comment ECE results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python .github/scripts/comment_eval.py
+      - name: Fail on regression
+        run: |
+          python .github/scripts/enforce_threshold.py --max_regress 0.02

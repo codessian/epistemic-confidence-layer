@@ -1,0 +1,12 @@
+area:adapters:
+  - 'src/ecl/adapters/**'
+area:calibration:
+  - 'src/ecl/calibration/**'
+area:provenance:
+  - 'src/ecl/provenance/**'
+area:docs:
+  - 'docs/**'
+area:api:
+  - 'src/ecl/server/**'
+area:eval:
+  - 'benchmarks/**'

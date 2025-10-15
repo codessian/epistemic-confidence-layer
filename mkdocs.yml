@@ -33,6 +33,7 @@ nav:
   - API: docs/api.md
   - Calibration: docs/calibration.md
   - Governance: docs/governance.md
+  - Bots: docs/bots.md
 
 markdown_extensions:
   - pymdownx.highlight:

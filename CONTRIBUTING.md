@@ -35,6 +35,12 @@ All commits must be signed off to certify you have the right to submit the code:
 git commit -s -m "feat: add new calibration method"
 ```
 
+If you forgot, you can amend:
+```bash
+git commit --amend -s --no-edit
+git push -f
+```
+
 ## Code of conduct
 See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 

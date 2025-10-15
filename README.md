@@ -98,6 +98,12 @@ make evaluate  # run toy benchmark & plot reliability
 ## Roadmap
 See [`ROADMAP.md`](ROADMAP.md).
 
+## Bots
+Automated assistants keep quality high:
+- **ECL-Verify Bot** runs tests/eval on PRs and posts ECE results.
+- **ECL-Triage Bot** labels issues and welcomes new contributors.
+See [`docs/bots.md`](docs/bots.md).
+
 ## Community
 - Ask questions in **Discussions**.
 - Issues welcome—start with `good first issue`.
