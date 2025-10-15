@@ -1,47 +1,35 @@
-# Contributing to Epistemic Confidence Layer
+# Contributing to ECL
 
-Thank you for your interest in contributing! This project aims to build a robust, principled foundation for confidence measurement and communication in AI systems. Thoughtful collaboration is essential.
+Thanks for helping build a universal trust protocol for AI. ✨
 
-We strive for a welcoming, respectful environment. Please be constructive, cite sources where relevant, and prefer clarity over cleverness.
+## Ground rules
+- Be kind. Assume good intent. Bias toward clarity.
+- Small, reviewable PRs > giant changes.
+- Include/refresh tests and docs with any behavior change.
+- Never commit secrets. Use `.env.example`.
 
-## Ways to Contribute
-- Report bugs and edge cases
-- Propose features and improvements
-- Discuss research and validation approaches
-- Improve docs, examples, and tutorials
-- Implement metrics, adapters, and visualizations
+## How to contribute
+1. **Pick an issue** (good-first-issue are tagged) or open one with context.
+2. **Create a branch**: `feat/<short-name>` or `fix/<short-name>`.
+3. **Dev setup**:
+   ```bash
+   python -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt -r requirements-dev.txt
+   pre-commit install
+   ```
+4. **Run checks**:
+   ```bash
+   ruff check .
+   mypy src
+   pytest -q
+   ```
+5. **Submit a PR** with a clear title and checklist of changes.
 
-## Development Setup
-1. Fork the repository and clone your fork.
-2. Create a Python virtual environment.
-   - Windows: `python -m venv .venv && .venv\Scripts\activate`
-3. Install in editable mode:
-   - `pip install -e .`
-4. Run examples to validate local setup:
-   - `python examples/hello.py`
+## Commit style
+- Conventional commits are preferred: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
 
-Optional tooling (to be added later): formatter, linter, and pre-commit hooks.
-## Issues
-- Use clear, actionable titles
-- Provide reproduction steps and environment details
-- Link related discussions or PRs
+## Code of conduct
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-## Pull Requests
-- Start from a fresh branch per change
-- Keep PRs focused and reasonably small
-- Include tests or validation notes when applicable
-- Update documentation if behavior or APIs change
-- Reference related issues in the description (e.g., `Fixes #123`)
-
-## Commit Messages
-- Use imperative mood and concise summaries
-- Include context for non-obvious changes
-- Example: `Add reliability diagram helper and unit tests`
-
-## Code Style and Testing
-- Prefer readability and maintainability
-- Add unit tests near new logic
-- Keep examples runnable across common Windows setups
-
-## License
-By contributing, you agree that your contributions will be licensed under the Apache License, Version 2.0.
+## Security
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).

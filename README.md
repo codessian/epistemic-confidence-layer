@@ -1,69 +1,70 @@
-# Epistemic Confidence Layer
+# Epistemic Confidence Layer (ECL)
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11-blue)](https://github.com/codessian/epistemic-confidence-layer)
-[![Status: Early Development](https://img.shields.io/badge/status-early--development-yellow)](https://github.com/codessian/epistemic-confidence-layer)
-[![CI](https://github.com/codessian/epistemic-confidence-layer/actions/workflows/ci.yml/badge.svg)](https://github.com/codessian/epistemic-confidence-layer/actions/workflows/ci.yml)
+> **TLS for Knowledge.** A model-agnostic trust protocol that turns fluent AI into **calibrated**, **auditable** systems.
 
-A principled, community-driven layer for quantifying, calibrating, and communicating epistemic confidence in AI systems. This project aims to make trustworthiness a first-class artifact—portable, inspectable, and reproducible—across models, datasets, and deployments.
+**Goal:** When an AI says "80% confident," it's correct ~80% of the time (ECE ≤ 0.10).
 
-Note: This repository is in early construction. Initial scaffolding is in place; features will iterate rapidly.
+## Why ECL
+- **Hallucinations happen.** ECL decomposes outputs into **atomic claims**, checks **cross-model agreement**, scores **evidence**, **recency**, **stability**, and **language integrity**, then returns a calibrated **Epistemic Confidence Score (ECS)**.
+- **Model-agnostic.** Works across GPT/Claude/Gemini/local LLMs; includes a **stub mode** for offline dev.
+- **Auditable provenance.** W3C-PROV style graph with hashes & timestamps.
 
-## Table of Contents
-- Vision
-- Features
-- Installation
-- Quickstart
-- Project Structure
-- Roadmap
-- Contributing
-- License
-- Community & Discussions
-
-## Vision
-The Epistemic Confidence Layer (ECL) provides a standardized toolkit to measure and convey confidence for AI outputs. It bridges research-grade methods and production-ready practices, enabling thoughtful calibration, uncertainty quantification, and transparent communication of reliability. See `docs/ECL_Genesis_Document.md` and `docs/Ambassadors_Manifesto_Phoenix.md` for philosophical and design context.
-
-## Features
-- Confidence metrics: calibration curves, reliability diagrams, expected calibration error.
-- Model-agnostic adapters: wrap LLMs or traditional models with confidence reporting.
-- Provenance & traceability: store inputs, assumptions, metrics, and decisions.
-- Pluggable visualizations: export HTML/PNG reports for audits and stakeholders.
-- Lightweight Python API: ergonomic primitives for pipelines and notebooks.
-
-## Installation
-Until the package is published, use editable installs:
-
+## Quickstart (60 seconds)
 ```bash
-# After creating the GitHub repo and cloning it locally
-git clone https://github.com/codessian/epistemic-confidence-layer.git
-cd epistemic-confidence-layer
-python -m venv .venv && .venv\Scripts\activate
-pip install -e .
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+uvicorn src.ecl.server.app:app --reload
 ```
 
-## Quickstart
-```python
-# Placeholder example; real API will evolve during Week 1
-# See examples/ once initial modules land
-print("Epistemic Confidence Layer setup working!")
+Then:
+```bash
+curl -X POST http://127.0.0.1:8000/verify \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Is Knysna in the Western Cape of South Africa?", "models":["stub:gpt","stub:claude"]}'
 ```
-## Project Structure
-- `docs/` — Core documentation, plans, and philosophy (migrated local docs)
-- `src/` — Python source code (modules to be added)
-- `examples/` — Usage examples and notebooks
-- `research/` — Notes, experiments, validation outputs
+
+**Response (stubbed):**
+```json
+{
+  "claims": [
+    {"id":"c_1","text":"Knysna is in the Western Cape of South Africa.","hash":"...","provenance":{"source":"extraction:heuristic"}}
+  ],
+  "consensus": [
+    {"claim_id":"c_1","agreement_score":0.95,"diversity_score":0.60,"evidence":[],"recency":1.0,"stability":0.9,"language_integrity":0.95,"ecs":0.88}
+  ]
+}
+```
+
+## Architecture
+```
+Prompt → Claim Extraction → Cross-Model Comparison → Contradiction Detection
+      → Calibration (ECE/Brier) → Guardrailed Synthesis → API/Dashboard
+```
+
+- More: [`docs/overview.md`](docs/overview.md), [`docs/architecture.md`](docs/architecture.md), [`docs/api.md`](docs/api.md), [`docs/calibration.md`](docs/calibration.md)
+
+## Calibration Target
+- **ECE ≤ 0.10** on the project's evaluation harness (see `benchmarks/`).
+- CI fails if calibration regresses on toy suite.
+
+## Development
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pre-commit install
+ruff check .
+mypy src
+pytest -q
+```
+
+Shortcuts:
+```bash
+make demo      # run server & minimal example
+make evaluate  # run toy benchmark & plot reliability
+```
+
+## Governance & Security
+- License: Apache-2.0
+- See: [`docs/governance.md`](docs/governance.md), [`SECURITY.md`](SECURITY.md), [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## Roadmap
-See `docs/90_Day_Sprint_Plan.md` for the full plan. Week 1 focuses on:
-- Repository setup and community onboarding
-- Baseline API and confidence metric prototypes
-- Example scripts and early visualizations
-
-## Contributing
-We welcome thoughtful, respectful contributions. Please read `CONTRIBUTING.md` for guidelines on issues, PRs, commit style, testing, and review. Templates are provided under `.github/`.
-
-## License
-Licensed under the Apache License, Version 2.0. See `LICENSE`.
-
-## Community & Discussions
-Enable Discussions in repo Settings → General → Discussions, or visit: https://github.com/codessian/epistemic-confidence-layer/discussions. Use threads for proposals, research notes, and Q&A.
+See [`ROADMAP.md`](ROADMAP.md).
