@@ -1,0 +1,8 @@
+{
+  "ecs": 0.7,
+  "claims": [{"id":"abc123","text":"X","support":[]}],
+  "consensus": {"models":["a","b"], "score": 0.8, "details":[{}]},
+  "provenance": {"prov_json": {"entity": {}}, "hash_version": "prov-hash-v1"},
+  "errors": [],
+  "timing_ms": {"total": 123, "adapters": {}}
+}

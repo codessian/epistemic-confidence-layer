@@ -1,0 +1,365 @@
+*** /dev/null
+--- b/schemas/verify.response.json
+@@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "title": "ECL Verify Response",
++  "type": "object",
++  "required": ["ecs", "claims", "consensus", "provenance", "timing_ms"],
++  "properties": {
++    "ecs": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
++    "claims": {
++      "type": "array",
++      "items": {
++        "type": "object",
++        "required": ["id", "text"],
++        "properties": {
++          "id": { "type": "string" },
++          "text": { "type": "string" },
++          "support": { "type": "array", "items": { "type": "string" } }
++        }
++      }
++    },
++    "consensus": {
++      "type": "object",
++      "required": ["models", "score", "details"],
++      "properties": {
++        "models": { "type": "array", "items": { "type": "string" }, "minItems": 2 },
++        "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
++        "details": { "type": "array", "items": { "type": "object" } }
++      }
++    },
++    "provenance": {
++      "type": "object",
++      "required": ["prov_json", "hash_version"],
++      "properties": {
++        "prov_json": { "type": "object" },
++        "hash_version": { "type": "string" }
++      }
++    },
++    "errors": {
++      "type": "array",
++      "items": {
++        "type": "object",
++        "required": ["code", "message"],
++        "properties": {
++          "code": { "type": "string" },
++          "message": { "type": "string" },
++          "retry_after_ms": { "type": "integer", "minimum": 0 }
++        }
++      }
++    },
++    "timing_ms": {
++      "type": "object",
++      "properties": {
++        "total": { "type": "integer", "minimum": 0 },
++        "adapters": { "type": "object" }
++      }
++    }
++  }
++}
++
+*** /dev/null
+--- b/src/ecl/similarity.py
+@@
++from __future__ import annotations
++from typing import Tuple
++
++# Skeleton embedding-based similarity module.
++# Real impl can use sentence-transformers or OpenAI embeddings via env flag.
++
++class SimilarityBackend:
++    def __init__(self, backend: str = "stub"):
++        self.backend = backend
++        # TODO: wire sentence-transformers (all-MiniLM-L6-v2) or OpenAI as option
++
++    def embed(self, text: str) -> list[float]:
++        # deterministic stub so CI remains hermetic
++        return [hash(text) % 997 / 997.0]
++
++    def cosine(self, v1: list[float], v2: list[float]) -> float:
++        # 1D stub cosine
++        a, b = v1[0], v2[0]
++        if a == 0 and b == 0:
++            return 1.0
++        return min(1.0, max(0.0, 1.0 - abs(a - b)))
++
++def classify_similarity(a: str, b: str, backend: SimilarityBackend | None = None) -> Tuple[str, float]:
++    """Return ('equivalent'|'related'|'different', score[0..1])."""
++    backend = backend or SimilarityBackend()
++    s = backend.cosine(backend.embed(a), backend.embed(b))
++    if s > 0.95:
++        return "equivalent", s
++    if s >= 0.85:
++        return "related", s
++    return "different", s
++
+*** /dev/null
+--- b/tests/test_similarity.py
+@@
++from src.ecl.similarity import classify_similarity
++
++def test_similarity_classes():
++    eq, _ = classify_similarity("hello world", "hello world")
++    assert eq == "equivalent"
++    rel, _ = classify_similarity("cat sat on mat", "kitten on mat")
++    assert rel in {"related", "equivalent"}
++    diff, _ = classify_similarity("quantum chromodynamics", "baking sourdough")
++    assert diff == "different"
++
+*** /dev/null
+--- b/src/ecl/calibration/isotonic.py
+@@
++from __future__ import annotations
++# Skeleton isotonic calibration API; plug real sklearn later.
++
++class IsotonicCalibrator:
++    def __init__(self):
++        self._fitted = False
++
++    def fit(self, y_pred: list[float], y_true: list[int]) -> "IsotonicCalibrator":
++        # TODO: replace with sklearn.IsotonicRegression
++        self._fitted = True
++        return self
++
++    def predict(self, y_pred: list[float]) -> list[float]:
++        if not self._fitted:
++            return y_pred
++        # trivial shrink-toward-0.5 stub
++        return [0.5 + 0.5 * (p - 0.5) * 0.8 for p in y_pred]
++
+*** /dev/null
+--- b/src/ecl/calibration/platt.py
+@@
++from __future__ import annotations
++# Skeleton Platt scaling; real impl can use sigmoid fit.
++
++class PlattCalibrator:
++    def __init__(self):
++        self.A, self.B, self._fitted = 1.0, 0.0, False
++
++    def fit(self, y_pred: list[float], y_true: list[int]) -> "PlattCalibrator":
++        # TODO: fit A,B via logistic regression
++        self.A, self.B, self._fitted = 1.0, 0.0, True
++        return self
++
++    def predict(self, y_pred: list[float]) -> list[float]:
++        import math
++        if not self._fitted:
++            return y_pred
++        return [1 / (1 + math.exp(-(self.A * p + self.B))) for p in y_pred]
++
+*** /dev/null
+--- b/src/ecl/provenance/prov.py
+@@
++from __future__ import annotations
++from dataclasses import dataclass
++import hashlib, json
++from typing import Dict, Any
++
++HASH_VERSION = "prov-hash-v1"
++
++def stable_claim_id(text: str) -> str:
++    h = hashlib.sha256()
++    h.update(b"ECL|claim|v1|")
++    h.update(text.strip().encode("utf-8"))
++    return h.hexdigest()[:16]
++
++@dataclass
++class ProvEntity:
++    id: str
++    attrs: Dict[str, Any]
++
++def prov_json_for_claims(claims: list[dict]) -> dict:
++    """Minimal PROV-JSON-style structure (W3C-inspired)."""
++    entities = {}
++    for c in claims:
++        cid = c.get("id") or stable_claim_id(c.get("text",""))
++        entities[cid] = {"prov:label": c.get("text",""), "ecl:support": c.get("support", [])}
++        c["id"] = cid
++    graph = {
++        "entity": entities,
++        "activity": {},
++        "agent": {}
++    }
++    return graph
++
+*** /dev/null
+--- b/tests/test_provenance.py
+@@
++from src.ecl.provenance.prov import stable_claim_id, prov_json_for_claims
++
++def test_stable_ids():
++    a = stable_claim_id("Same claim")
++    b = stable_claim_id("Same claim")
++    assert a == b
++    c = stable_claim_id("Different claim")
++    assert a != c
++
++def test_prov_populates_ids():
++    claims = [{"text": "The sky is blue"}]
++    graph = prov_json_for_claims(claims)
++    assert "entity" in graph and len(graph["entity"]) == 1
++    assert "id" in claims[0]
++
+*** /dev/null
+--- b/src/ecl/cache.py
+@@
++from __future__ import annotations
++import json, os, time, hashlib
++from pathlib import Path
++from typing import Any, Optional
++
++class FileCache:
++    def __init__(self, root: str | Path = ".ecl_cache", ttl_hours: int = 4):
++        self.root = Path(root)
++        self.root.mkdir(exist_ok=True)
++        self.ttl = ttl_hours * 3600
++
++    def _key(self, **kwargs) -> str:
++        h = hashlib.sha256()
++        h.update(json.dumps(kwargs, sort_keys=True).encode())
++        return h.hexdigest()
++
++    def get(self, **kwargs) -> Optional[Any]:
++        k = self._key(**kwargs)
++        p = self.root / k
++        if not p.exists():
++            return None
++        if time.time() - p.stat().st_mtime > self.ttl:
++            try: p.unlink()
++            except OSError: pass
++            return None
++        try:
++            return json.loads(p.read_text())
++        except Exception:
++            return None
++
++    def set(self, value: Any, **kwargs) -> None:
++        k = self._key(**kwargs)
++        p = self.root / k
++        p.write_text(json.dumps(value))
++
+*** /dev/null
+--- b/tests/test_cache.py
+@@
++from src.ecl.cache import FileCache
++import time
++
++def test_cache_hit_and_expiry(tmp_path):
++    c = FileCache(root=tmp_path, ttl_hours=0.0001)  # ~0.36s
++    key = dict(prompt="hello", model_id="stub", temperature=0.0)
++    assert c.get(**key) is None
++    c.set({"ok": True}, **key)
++    assert c.get(**key) == {"ok": True}
++    time.sleep(0.5)
++    assert c.get(**key) is None
++
+*** a/src/ecl/server/app.py
+--- b/src/ecl/server/app.py
+@@
+-from fastapi import FastAPI
++from fastapi import FastAPI, Response
++import json, time
++from pathlib import Path
++from ..provenance.prov import prov_json_for_claims, HASH_VERSION
++from ..similarity import classify_similarity
++from ..calibration.isotonic import IsotonicCalibrator
++from ..cache import FileCache
++
+ app = FastAPI(title="ECL API")
+ 
+ @app.get("/health")
+-def health():
+-    return {"status": "ok"}
++def health():
++    # minimal metrics placeholder (extend later)
++    return {"status": "ok", "cache": {"enabled": True}}
+ 
+ @app.post("/verify")
+-def verify():
+-    # existing stub elsewhere; keep compatible return shape
+-    return {"ecs": 0.5, "claims": [], "consensus": {"models": [], "score": 0.0, "details": []}, "provenance": {}, "timing_ms": {"total": 0}}
++def verify():
++    t0 = time.time()
++    # minimal deterministic vertical slice response
++    claims = [{"text": "httpOnly cookies mitigate XSS token theft"}]
++    prov = prov_json_for_claims(claims)
++    # fake consensus using similarity (placeholder)
++    _, sim = classify_similarity("A", "A")
++    consensus = {"models": ["stub:gpt", "stub:claude"], "score": sim, "details": [{"model":"stub:gpt"}, {"model":"stub:claude"}]}
++    ecs_raw = 0.62
++    ecs = IsotonicCalibrator().fit([ecs_raw, 0.4, 0.8], [1,0,1]).predict([ecs_raw])[0]
++    body = {
++        "ecs": float(ecs),
++        "claims": claims,
++        "consensus": consensus,
++        "provenance": {"prov_json": prov, "hash_version": HASH_VERSION},
++        "errors": [],
++        "timing_ms": {"total": int((time.time()-t0)*1000)}
++    }
++    return body
++
+*** /dev/null
+--- b/.github/workflows/schema-validate.yml
+@@
++name: JSON Schema Validation
++on:
++  push:
++    paths: ["schemas/**", "tests/schema_fixtures/**", ".github/workflows/schema-validate.yml"]
++  pull_request:
++    paths: ["schemas/**", "tests/schema_fixtures/**", ".github/workflows/schema-validate.yml"]
++jobs:
++  validate:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with: { python-version: '3.11' }
++      - run: python -m pip install -U pip jsonschema
++      - name: Validate fixtures against schema
++        run: |
++          python - <<'PY'
++import json, glob
++from jsonschema import validate
++schema = json.load(open("schemas/verify.response.json"))
++for f in glob.glob("tests/schema_fixtures/*.json"):
++    data = json.load(open(f))
++    validate(instance=data, schema=schema)
++    print("validated:", f)
++PY
++
+*** /dev/null
+--- b/tests/schema_fixtures/sample_ok.json
+@@
++{
++  "ecs": 0.7,
++  "claims": [{"id":"abc123","text":"X","support":[]}],
++  "consensus": {"models":["a","b"], "score": 0.8, "details":[{}]},
++  "provenance": {"prov_json": {"entity": {}}, "hash_version": "prov-hash-v1"},
++  "errors": [],
++  "timing_ms": {"total": 123, "adapters": {}}
++}
++
+*** /dev/null
+--- b/.env.example
+@@
++# Provider API keys (optional for local dev; CI stays mocked)
++OPENAI_API_KEY=
++ANTHROPIC_API_KEY=
++GOOGLE_API_KEY=
++
++# Similarity backend: "sentence-transformers" | "openai" | "stub"
++ECL_EMBED_BACKEND=stub
++
++# Cache
++ECL_CACHE_TTL_HOURS=4
++
+*** a/README.md
+--- b/README.md
+@@
+-### Quickstart
++### Quickstart
+ 1) Install:
+ ```bash
+ pip install -r requirements.txt -r requirements-dev.txt

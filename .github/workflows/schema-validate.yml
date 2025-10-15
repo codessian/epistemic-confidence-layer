@@ -1,0 +1,25 @@
+name: JSON Schema Validation
+on:
+  push:
+    paths: ["schemas/**", "tests/schema_fixtures/**", ".github/workflows/schema-validate.yml"]
+  pull_request:
+    paths: ["schemas/**", "tests/schema_fixtures/**", ".github/workflows/schema-validate.yml"]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: python -m pip install -U pip jsonschema
+      - name: Validate fixtures against schema
+        run: |
+          python - <<'PY'
+import json, glob
+from jsonschema import validate
+schema = json.load(open("schemas/verify.response.json"))
+for f in glob.glob("tests/schema_fixtures/*.json"):
+    data = json.load(open(f))
+    validate(instance=data, schema=schema)
+    print("validated:", f)
+PY
