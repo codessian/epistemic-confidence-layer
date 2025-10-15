@@ -167,3 +167,24 @@ for claim in claims:
 ---
 
 **Congratulations!** You've successfully run ECL end-to-end. You're now ready to integrate calibrated confidence into your AI applications.
+
+### Optional: enable semantic similarity
+By default, ECL uses `sentence-transformers` for embeddings. To switch to OpenAI embeddings:
+
+```bash
+export ECL_EMBED_BACKEND=openai
+export OPENAI_API_KEY=your_openai_key
+export ECL_OPENAI_EMBED_MODEL=text-embedding-3-small
+```
+
+You can also configure the Sentence-Transformers model:
+
+```bash
+export ECL_EMBED_BACKEND=sentence-transformers
+export ECL_ST_MODEL=all-MiniLM-L6-v2
+```
+
+Similarity thresholds:
+- `equivalent` if cosine ≥ 0.95
+- `related` if 0.85–0.95
+- `different` if < 0.85

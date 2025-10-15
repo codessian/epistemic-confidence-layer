@@ -1,29 +1,41 @@
-"""Anthropic adapter implementation."""
+"""Anthropic adapter implementation with env-based stub fallback."""
 
-from typing import Optional
+import os
+from typing import Any
 from .base import BaseAdapter
+
+try:  # pragma: no cover
+    import anthropic
+except Exception:
+    anthropic = None  # type: ignore
 
 
 class AnthropicAdapter(BaseAdapter):
-    """Adapter for Anthropic models (Claude, etc.)."""
-    
-    def __init__(self, model_id: str = "claude-3-sonnet-20240229", api_key: Optional[str] = None, **kwargs):
+    """Adapter for Anthropic models with graceful fallback when unavailable."""
+
+    def __init__(self, model_id: str = "claude-3-5-sonnet-20240620", **kwargs: Any):
         super().__init__(model_id, **kwargs)
-        self.api_key = api_key
-        # TODO: Initialize Anthropic client
-    
-    def generate(self, prompt: str, **kwargs) -> str:
-        """Generate text using Anthropic API.
-        
-        TODO: Implement actual Anthropic API call
-        - Use anthropic library
-        - Handle rate limiting and errors
-        - Support temperature, max_tokens, etc.
-        """
-        # Stub implementation
-        return f"[Anthropic {self.model_id} stub response to: {prompt[:50]}...]"
-    
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        self._client = anthropic.Anthropic(api_key=api_key) if (anthropic and api_key) else None
+
+    def generate(self, prompt: str, **kwargs: Any) -> str:
+        if self._client is None:
+            return f"[anthropic-stub] {prompt[:200]}"
+        model = kwargs.get("model", self.model_id)
+        temperature = float(kwargs.get("temperature", 0.2))
+        max_tokens = int(kwargs.get("max_tokens", 256))
+        resp = self._client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        # Normalize to string
+        try:
+            parts = [b.text for b in resp.content if getattr(b, "type", "") == "text"]
+            return "\n".join(parts).strip()
+        except Exception:
+            return str(resp)
+
     def is_available(self) -> bool:
-        """Check if Anthropic API key is configured."""
-        # TODO: Implement actual availability check
-        return self.api_key is not None
+        return self._client is not None

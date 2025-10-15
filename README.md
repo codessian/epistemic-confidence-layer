@@ -30,6 +30,10 @@ curl -X POST http://127.0.0.1:8000/verify \
   -d '{"prompt":"Is Knysna in the Western Cape of South Africa?", "models":["stub:gpt","stub:claude"]}'
 ```
 
+## Features
+- Semantic equivalence via embeddings (Sentence-Transformers by default; OpenAI optional)
+- Isotonic and Platt calibration baselines
+
 ## Real Providers Setup
 
 For production use with actual model providers:
@@ -42,6 +46,8 @@ cp .env.example .env
 ECL_OPENAI_API_KEY=your_openai_key
 ECL_ANTHROPIC_API_KEY=your_anthropic_key
 ECL_EMBED_BACKEND=sentence-transformers  # or "openai"
+ECL_ST_MODEL=all-MiniLM-L6-v2
+ECL_OPENAI_EMBED_MODEL=text-embedding-3-small
 ```
 
 **Local Models:** ECL supports Ollama for offline development:
