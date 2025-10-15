@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ECL Verify Response",
+  "type": "object",
+  "required": ["claims", "consensus"],
+  "properties": {
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "text", "hash", "provenance"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^c_[a-f0-9]{8}$"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{16}$"
+          },
+          "provenance": {
+            "type": "object",
+            "required": ["source"],
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "prov": {
+                "type": "object",
+                "description": "W3C PROV entities/activities/agents"
+              }
+            }
+          }
+        }
+      }
+    },
+    "consensus": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_id", "agreement_score", "diversity_score", "evidence", "recency", "stability", "language_integrity", "ecs"],
+        "properties": {
+          "claim_id": {
+            "type": "string"
+          },
+          "agreement_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "diversity_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "recency": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "stability": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "language_integrity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "ecs": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Epistemic Confidence Score (calibrated)"
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "processing_time_ms": {
+          "type": "number"
+        },
+        "cache_hits": {
+          "type": "integer"
+        },
+        "providers_used": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": ["PROVIDER_TIMEOUT", "CACHE_HIT", "CALIBRATION_MISSING", "PROV_BUILD_FAIL", "RATE_LIMITED"]
+        },
+        "message": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "retry_after_ms": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

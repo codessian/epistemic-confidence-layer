@@ -28,6 +28,7 @@ theme:
 
 nav:
   - Overview: docs/overview.md
+  - Tutorial: docs/tutorial.md
   - Architecture: docs/architecture.md
   - API: docs/api.md
   - Calibration: docs/calibration.md

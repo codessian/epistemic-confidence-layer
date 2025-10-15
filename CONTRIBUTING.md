@@ -26,7 +26,14 @@ Thanks for helping build a universal trust protocol for AI. ✨
 5. **Submit a PR** with a clear title and checklist of changes.
 
 ## Commit style
-- Conventional commits are preferred: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
+- Conventional commits are preferred: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`, `perf:`, `build:`, `ci:`.
+- We use **SemVer**: breaking changes require `BREAKING CHANGE:` in commit body.
+
+## Sign-off (DCO)
+All commits must be signed off to certify you have the right to submit the code:
+```bash
+git commit -s -m "feat: add new calibration method"
+```
 
 ## Code of conduct
 See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

@@ -1,0 +1,17 @@
+# Global ownership
+* @codessian
+
+# Documentation
+/docs/ @codessian
+/README.md @codessian
+/CONTRIBUTING.md @codessian
+
+# Core architecture
+/src/ecl/adapters/ @codessian
+/src/ecl/calibration/ @codessian
+/src/ecl/consensus/ @codessian
+/src/ecl/provenance/ @codessian
+
+# CI and governance
+/.github/ @codessian
+/mkdocs.yml @codessian

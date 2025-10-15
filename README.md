@@ -30,6 +30,27 @@ curl -X POST http://127.0.0.1:8000/verify \
   -d '{"prompt":"Is Knysna in the Western Cape of South Africa?", "models":["stub:gpt","stub:claude"]}'
 ```
 
+## Real Providers Setup
+
+For production use with actual model providers:
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Add your API keys
+ECL_OPENAI_API_KEY=your_openai_key
+ECL_ANTHROPIC_API_KEY=your_anthropic_key
+ECL_EMBED_BACKEND=sentence-transformers  # or "openai"
+```
+
+**Local Models:** ECL supports Ollama for offline development:
+```bash
+# Install Ollama, then:
+ECL_LOCAL_MODEL=ollama:llama3.1:8b
+ECL_OLLAMA_BASE_URL=http://localhost:11434
+```
+
 **Response (stubbed):**
 ```json
 {
