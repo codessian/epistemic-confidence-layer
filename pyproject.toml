@@ -20,8 +20,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/<your-org>/epistemic-confidence-layer"
-Issues = "https://github.com/<your-org>/epistemic-confidence-layer/issues"
+Homepage = "https://github.com/codessian/epistemic-confidence-layer"
+Issues = "https://github.com/codessian/epistemic-confidence-layer/issues"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -1,8 +1,9 @@
 # Epistemic Confidence Layer
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) 
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11-blue)](#)
-[![Status: Early Development](https://img.shields.io/badge/status-early--development-yellow)](#)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11-blue)](https://github.com/codessian/epistemic-confidence-layer)
+[![Status: Early Development](https://img.shields.io/badge/status-early--development-yellow)](https://github.com/codessian/epistemic-confidence-layer)
+[![CI](https://github.com/codessian/epistemic-confidence-layer/actions/workflows/ci.yml/badge.svg)](https://github.com/codessian/epistemic-confidence-layer/actions/workflows/ci.yml)
 
 A principled, community-driven layer for quantifying, calibrating, and communicating epistemic confidence in AI systems. This project aims to make trustworthiness a first-class artifact—portable, inspectable, and reproducible—across models, datasets, and deployments.
 
@@ -20,7 +21,9 @@ Note: This repository is in early construction. Initial scaffolding is in place;
 - Community & Discussions
 
 ## Vision
-The Epistemic Confidence Layer (ECL) provides a standardized toolkit to measure and convey confidence for AI outputs. It bridges research-grade methods and production-ready practices, enabling thoughtful calibration, uncertainty quantification, and transparent communication of reliability. See `docs/ECL_Genesis_Document.md` and `docs/Ambassadors_Manifesto_Phoenix.md` for philosophical and design context.## Features
+The Epistemic Confidence Layer (ECL) provides a standardized toolkit to measure and convey confidence for AI outputs. It bridges research-grade methods and production-ready practices, enabling thoughtful calibration, uncertainty quantification, and transparent communication of reliability. See `docs/ECL_Genesis_Document.md` and `docs/Ambassadors_Manifesto_Phoenix.md` for philosophical and design context.
+
+## Features
 - Confidence metrics: calibration curves, reliability diagrams, expected calibration error.
 - Model-agnostic adapters: wrap LLMs or traditional models with confidence reporting.
 - Provenance & traceability: store inputs, assumptions, metrics, and decisions.
@@ -63,4 +66,4 @@ We welcome thoughtful, respectful contributions. Please read `CONTRIBUTING.md` f
 Licensed under the Apache License, Version 2.0. See `LICENSE`.
 
 ## Community & Discussions
-Once the GitHub repository is live, enable Discussions in Settings → General → Discussions. Use threads for proposals, research notes, and Q&A. Badges and links will be updated after the repo URL is confirmed.
+Enable Discussions in repo Settings → General → Discussions, or visit: https://github.com/codessian/epistemic-confidence-layer/discussions. Use threads for proposals, research notes, and Q&A.
