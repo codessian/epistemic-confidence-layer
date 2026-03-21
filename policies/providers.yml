@@ -1,0 +1,40 @@
+providers:
+  - id: openrouter:deepseek-chat
+    kind: openrouter
+    model: deepseek/deepseek-chat
+    allow_pii: false
+  - id: openrouter:perplexity-sonar
+    kind: openrouter
+    model: perplexity/sonar
+    allow_pii: false
+  - id: mistral:large
+    kind: openrouter
+    model: mistral/mistral-large
+    allow_pii: false
+  - id: gemini:flash
+    kind: gemini
+    model: gemini-1.5-flash
+    allow_pii: false
+  - id: vertex:flash
+    kind: vertex
+    model: gemini-1.5-flash
+    allow_pii: false
+  - id: ollama:llama3.1-8b
+    kind: ollama
+    model: llama3.1:8b
+    allow_pii: false
+  - id: hf:tgi
+    kind: hf
+    model: repo-id           # set HF_API_URL env instead of model
+    allow_pii: false
+
+strategies:
+  - name: default
+    select:
+      type: quorum_k_of_n
+      k: 2
+      providers: [gemini:flash, openrouter:deepseek-chat, mistral:large, ollama:llama3.1-8b]
+    constraints:
+      min_diversity_score: 0.6
+      max_latency_ms: 4000
+      budget_usd: 0.20

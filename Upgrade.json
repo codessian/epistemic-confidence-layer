@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "adapters": [
+    {
+      "name": "DeepSummarizeAnyPage",
+      "type": "puppeteer-loader",
+      "entrypoint": "adapters/deepSummarize/index.js",
+      "backendProviderSwitch": ["UNSIGNED-DEV", "PROD"],
+      "description": "Summarizes content from arbitrary web pages using Puppeteer.",
+      "settings": {
+        "timeout": 30000,
+        "maxContentLength": 100000,
+        "summarizationModel": "default"
+      }
+    },
+    {
+      "name": "PRSummaryV2",
+      "type": "github-rest-scrape",
+      "entrypoint": "adapters/prSummaryV2/index.js",
+      "backendProviderSwitch": ["UNSIGNED-DEV", "PROD"],
+      "description": "Summarizes GitHub Pull Requests with REST API and scraping fallback.",
+      "settings": {
+        "fallback": true,
+        "summarizationModel": "default",
+        "apiVersion": "v2"
+      }
+    },
+    {
+      "name": "NotionToRFC",
+      "type": "notion-api-scrape",
+      "entrypoint": "adapters/notionToRFC/index.js",
+      "backendProviderSwitch": ["UNSIGNED-DEV", "PROD"],
+      "description": "Converts Notion documents to RFC structure, using API first, then scraping.",
+      "settings": {
+        "preferApi": true,
+        "fallbackScrape": true,
+        "outputFormat": "RFC"
+      }
+    }
+  ]
+}

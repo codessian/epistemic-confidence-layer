@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Tuple
 from dataclasses import dataclass
 from ..cache import get as cache_get, set as cache_set
 from ..adapter_metrics import record_adapter_event
+from ..errors import AdapterError
 
 
 @dataclass
@@ -13,6 +14,17 @@ class AdapterResponse:
     text: str
     model_id: str
     metadata: Dict[str, Any]
+
+
+@dataclass
+class Generation:
+    """Generation result with text and metadata."""
+    text: str
+    metadata: Dict[str, Any]
+
+
+# Alias for backward compatibility
+ProviderError = AdapterError
 
 
 class BaseAdapter(ABC):

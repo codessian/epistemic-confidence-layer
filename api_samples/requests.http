@@ -1,0 +1,18 @@
+@host = http://localhost
+@port = 8788
+@api = {{host}}:{{port}}
+
+### Health
+GET {{api}}/healthz
+
+### Calibration Health
+GET {{api}}/health/calibration
+
+### Topics
+GET {{api}}/topics/list
+
+### Suggest
+GET {{api}}/suggest?q=auth
+
+### Search
+GET {{api}}/memory/search?q=jwt&confidence_min=0.7&topics=auth_jwt&models=claude-3,gpt-4o&sort=confidence

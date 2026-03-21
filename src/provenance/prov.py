@@ -55,3 +55,21 @@ def prov_json_for(claims: list[dict]) -> dict:
         "hash_version": HASH_VERSION,
     }
     return prov
+
+def prov_from_generations(generations, route_meta=None):
+    """
+    Build a minimal PROV-like dict from generations + router metadata.
+    """
+    entities = []
+    for g in generations:
+        entities.append({
+            "id": g.metadata.get("provider_id", g.metadata.get("vendor","unknown")),
+            "attrs": {
+                "model": g.metadata.get("model"),
+                "vendor": g.metadata.get("vendor"),
+                "arch_family": g.metadata.get("arch_family"),
+                "latency_ms": g.metadata.get("latency_ms"),
+                "route_id": g.metadata.get("route_id"),
+            }
+        })
+    return {"entities": entities, "route": route_meta or {}}

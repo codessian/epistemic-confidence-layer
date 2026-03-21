@@ -1,0 +1,530 @@
+# from repo root
+cat > router_providers_patch.diff <<'PATCH'
+*** Begin Patch
+*** Add File: src/ecl/router.py
++from __future__ import annotations
++import time, json, os, random
++from dataclasses import dataclass, field
++from typing import Dict, Any, List, Optional, Tuple
++
++from .adapters.base import Generation, BaseAdapter, AdapterRegistry, ProviderError
++from .cache import get_cache
++
++@dataclass
++class ProviderSpec:
++    id: str
++    kind: str                 # "gemini" | "vertex" | "ollama" | "hf" | "openrouter" | "openai" | "anthropic"
++    model: str
++    allow_pii: bool = False
++    region: Optional[str] = None
++    max_tps: Optional[float] = None
++
++@dataclass
++class RoutePolicy:
++    name: str
++    select: Dict[str, Any]      # {type: "quorum_k_of_n", k:2, providers:[...]}
++    constraints: Dict[str, Any] = field(default_factory=dict)  # {min_diversity_score: 0.6, max_latency_ms: 4000, budget_usd: 0.25}
++
++def _diversity_score(chosen: List[Generation]) -> float:
++    # Simple diversity proxy: prefer distinct vendor & arch
++    vendors = {g.metadata.get("vendor") for g in chosen}
++    archs   = {g.metadata.get("arch_family") for g in chosen}
++    return (len(vendors) + len(archs)) / (2.0 * max(1, len(chosen)))
++
++class DynamicRouter:
++    """
++    Chooses N providers per policy, orchestrates calls with budget/latency guards,
++    returns generations + rich metadata for consensus/provenance.
++    """
++    def __init__(self, provider_specs: List[ProviderSpec], policy: RoutePolicy):
++        self.provider_specs = {p.id: p for p in provider_specs}
++        self.policy = policy
++        self.registry = AdapterRegistry.global_registry()
++        self.cache = get_cache()
++
++    def _pick_providers(self) -> List[ProviderSpec]:
++        cfg = self.policy.select
++        ids = cfg.get("providers", [])
++        random.shuffle(ids)
++        k = min(cfg.get("k", 2), len(ids))
++        return [self.provider_specs[i] for i in ids[:k]]
++
++    def generate(self, prompt: str, route_id: Optional[str]=None, **kwargs) -> Tuple[List[Generation], Dict[str, Any]]:
++        route_id = route_id or f"route-{int(time.time()*1000)}"
++        t0 = time.time()
++        chosen = self._pick_providers()
++        budget = float(self.policy.constraints.get("budget_usd", 0.25))
++        max_latency_ms = int(self.policy.constraints.get("max_latency_ms", 4000))
++        spent = 0.0
++        gens: List[Generation] = []
++
++        for spec in chosen:
++            adapter = self.registry.get(spec.kind)
++            if not adapter:
++                continue
++            # PII guard
++            if not spec.allow_pii and kwargs.get("contains_pii"):
++                continue
++            # TTL cache for idempotent calls
++            cache_key = f"gen::{spec.kind}::{spec.model}::{prompt}"
++            cached = self.cache.get(cache_key)
++            if cached:
++                gen = Generation(text=cached["text"], metadata=cached["metadata"])
++                gens.append(gen)
++                continue
++            t1 = time.time()
++            try:
++                gen = adapter.generate(
++                    prompt,
++                    model=spec.model,
++                    timeout_s=min(max_latency_ms/1000.0, kwargs.get("timeout_s", max_latency_ms/1000.0)),
++                    route_id=route_id,
++                )
++                t2 = time.time()
++                spent += gen.metadata.get("cost_usd", 0.0)
++                gen.metadata.update({
++                    "provider_id": spec.id,
++                    "model": spec.model,
++                    "vendor": gen.metadata.get("vendor", spec.kind),
++                    "arch_family": gen.metadata.get("arch_family", "unknown"),
++                    "latency_ms": int((t2 - t1)*1000),
++                    "route_id": route_id,
++                })
++                # budget/latency guards
++                if (t2 - t0)*1000 > max_latency_ms or spent > budget:
++                    gens.append(gen)
++                    break
++                gens.append(gen)
++                # cache store (respect adapter’s suggested TTL)
++                ttl = int(os.getenv("ECL_CACHE_TTL_HOURS", "1")) * 3600
++                self.cache.set(cache_key, {"text": gen.text, "metadata": gen.metadata}, ttl)
++            except ProviderError as e:
++                gens.append(Generation(text="", metadata={
++                    "provider_id": spec.id,
++                    "model": spec.model,
++                    "error": str(e),
++                    "route_id": route_id,
++                }))
++        meta = {
++            "route_id": route_id,
++            "policy": self.policy.name,
++            "diversity_score": _diversity_score(gens) if gens else 0.0,
++            "budget_spent_usd": round(spent, 6),
++            "elapsed_ms": int((time.time()-t0)*1000),
++        }
++        return gens, meta
++
+*** End Patch
+*** Add File: src/ecl/adapters/openrouter.py
++from __future__ import annotations
++import os, requests, time
++from typing import Dict, Any
++from .base import BaseAdapter, Generation, ProviderError, AdapterRegistry
++
++class OpenRouterAdapter(BaseAdapter):
++    name = "openrouter"
++
++    def generate(self, prompt: str, **kwargs) -> Generation:
++        api_key = os.getenv("OPENROUTER_API_KEY")
++        if not api_key:
++            raise ProviderError("OPENROUTER_API_KEY not set")
++        model = kwargs.get("model")
++        timeout = kwargs.get("timeout_s", 15)
++        t0 = time.time()
++        try:
++            r = requests.post(
++                "https://openrouter.ai/api/v1/chat/completions",
++                headers={"Authorization": f"Bearer {api_key}", "HTTP-Referer": "https://github.com/codessian/epistemic-confidence-layer"},
++                json={"model": model, "messages":[{"role":"user","content":prompt}], "temperature":0},
++                timeout=timeout,
++            )
++            if r.status_code >= 400:
++                raise ProviderError(f"OpenRouter HTTP {r.status_code}: {r.text[:200]}")
++            data = r.json()
++            text = data["choices"][0]["message"]["content"]
++            latency = int((time.time()-t0)*1000)
++            # rough cost estimate if provided
++            meta = {"vendor":"openrouter","arch_family":"var","latency_ms":latency}
++            return Generation(text=text, metadata=meta)
++        except requests.Timeout as e:
++            raise ProviderError(f"OpenRouter timeout: {e}")
++
++AdapterRegistry.global_registry().register(OpenRouterAdapter())
++
+*** End Patch
+*** Add File: src/ecl/adapters/ollama.py
++from __future__ import annotations
++import requests, time
++from typing import Any
++from .base import BaseAdapter, Generation, ProviderError, AdapterRegistry
++
++class OllamaAdapter(BaseAdapter):
++    name = "ollama"
++    def generate(self, prompt: str, **kwargs) -> Generation:
++        model = kwargs.get("model", "llama3.1")
++        timeout = kwargs.get("timeout_s", 15)
++        t0 = time.time()
++        try:
++            r = requests.post("http://127.0.0.1:11434/api/generate",
++                              json={"model": model, "prompt": prompt, "stream": False},
++                              timeout=timeout)
++            if r.status_code >= 400:
++                raise ProviderError(f"Ollama HTTP {r.status_code}: {r.text[:200]}")
++            data = r.json()
++            latency = int((time.time()-t0)*1000)
++            return Generation(text=data.get("response",""), metadata={"vendor":"ollama","arch_family":"local","latency_ms":latency})
++        except requests.Timeout as e:
++            raise ProviderError(f"Ollama timeout: {e}")
++
++AdapterRegistry.global_registry().register(OllamaAdapter())
++
+*** End Patch
+*** Add File: src/ecl/adapters/hf.py
++from __future__ import annotations
++import os, requests, time
++from .base import BaseAdapter, Generation, ProviderError, AdapterRegistry
++
++class HFInferenceAdapter(BaseAdapter):
++    name = "hf"
++    def generate(self, prompt: str, **kwargs) -> Generation:
++        api = os.getenv("HF_API_URL")  # e.g., https://api-inference.huggingface.co/models/<repo-id>
++        key = os.getenv("HF_API_TOKEN")
++        if not api or not key:
++            raise ProviderError("HF_API_URL or HF_API_TOKEN not set")
++        timeout = kwargs.get("timeout_s", 15)
++        t0 = time.time()
++        try:
++            r = requests.post(api, headers={"Authorization": f"Bearer {key}"}, json={"inputs": prompt}, timeout=timeout)
++            if r.status_code >= 400:
++                raise ProviderError(f"HF HTTP {r.status_code}: {r.text[:200]}")
++            data = r.json()
++            # Best-effort text extraction for generic endpoints
++            if isinstance(data, list) and data and isinstance(data[0], dict):
++                text = data[0].get("generated_text","")
++            else:
++                text = str(data)
++            latency = int((time.time()-t0)*1000)
++            return Generation(text=text, metadata={"vendor":"hf","arch_family":"tgi","latency_ms":latency})
++        except requests.Timeout as e:
++            raise ProviderError(f"HF timeout: {e}")
++
++AdapterRegistry.global_registry().register(HFInferenceAdapter())
++
+*** End Patch
+*** Add File: src/ecl/adapters/gemini.py
++from __future__ import annotations
++import os, time
++from .base import BaseAdapter, Generation, ProviderError, AdapterRegistry
++
++class GeminiAdapter(BaseAdapter):
++    name = "gemini"
++    def generate(self, prompt: str, **kwargs) -> Generation:
++        # Lazy import to avoid hard dependency
++        key = os.getenv("GEMINI_API_KEY")
++        if not key:
++            raise ProviderError("GEMINI_API_KEY not set")
++        try:
++            import google.generativeai as genai
++        except Exception as e:
++            raise ProviderError(f"Gemini SDK not available: {e}")
++        model_id = kwargs.get("model", "gemini-1.5-flash")
++        timeout = kwargs.get("timeout_s", 15)
++        t0 = time.time()
++        genai.configure(api_key=key)
++        try:
++            model = genai.GenerativeModel(model_id)
++            # No direct timeout param; rely on client/network defaults.
++            resp = model.generate_content(prompt)
++            text = getattr(resp, "text", "") or ""
++            latency = int((time.time()-t0)*1000)
++            return Generation(text=text, metadata={"vendor":"google","arch_family":"gemini","latency_ms":latency})
++        except Exception as e:
++            raise ProviderError(f"Gemini error: {e}")
++
++AdapterRegistry.global_registry().register(GeminiAdapter())
++
+*** End Patch
+*** Add File: src/ecl/adapters/vertex.py
++from __future__ import annotations
++import os, time
++from .base import BaseAdapter, Generation, ProviderError, AdapterRegistry
++
++class VertexAIAdapter(BaseAdapter):
++    name = "vertex"
++    def generate(self, prompt: str, **kwargs) -> Generation:
++        project = os.getenv("VERTEX_PROJECT")
++        location = os.getenv("VERTEX_LOCATION","us-central1")
++        if not project:
++            raise ProviderError("VERTEX_PROJECT not set")
++        try:
++            from google.cloud import aiplatform
++        except Exception as e:
++            raise ProviderError(f"Vertex SDK not available: {e}")
++        model = kwargs.get("model", "gemini-1.5-flash")
++        t0 = time.time()
++        try:
++            aiplatform.init(project=project, location=location)
++            from vertexai.preview.generative_models import GenerativeModel
++            m = GenerativeModel(model)
++            resp = m.generate_content(prompt)
++            text = getattr(resp, "text", "") or ""
++            latency = int((time.time()-t0)*1000)
++            return Generation(text=text, metadata={"vendor":"google","arch_family":"gemini/vertex","latency_ms":latency, "region": location})
++        except Exception as e:
++            raise ProviderError(f"Vertex error: {e}")
++
++AdapterRegistry.global_registry().register(VertexAIAdapter())
++
+*** End Patch
+*** Add File: policies/providers.yml
++providers:
++  - id: openrouter:deepseek-chat
++    kind: openrouter
++    model: deepseek/deepseek-chat
++    allow_pii: false
++  - id: openrouter:perplexity-sonar
++    kind: openrouter
++    model: perplexity/sonar
++    allow_pii: false
++  - id: mistral:large
++    kind: openrouter
++    model: mistral/mistral-large
++    allow_pii: false
++  - id: gemini:flash
++    kind: gemini
++    model: gemini-1.5-flash
++    allow_pii: false
++  - id: vertex:flash
++    kind: vertex
++    model: gemini-1.5-flash
++    allow_pii: false
++  - id: ollama:llama3.1-8b
++    kind: ollama
++    model: llama3.1:8b
++    allow_pii: false
++  - id: hf:tgi
++    kind: hf
++    model: repo-id           # set HF_API_URL env instead of model
++    allow_pii: false
++
++strategies:
++  - name: default
++    select:
++      type: quorum_k_of_n
++      k: 2
++      providers: [gemini:flash, openrouter:deepseek-chat, mistral:large, ollama:llama3.1-8b]
++    constraints:
++      min_diversity_score: 0.6
++      max_latency_ms: 4000
++      budget_usd: 0.20
++
+*** End Patch
+*** Update File: src/ecl/consensus/score.py
+@@
+-def score_consensus(model_texts):
++def score_consensus(model_texts, router_meta=None):
+     """
+-    Existing stub consensus scorer.
++    Consensus scorer with diversity weighting (if router metadata present).
+     """
+     if not model_texts:
+         return 0.0, {"pairs": 0}
+     base = 1.0 if len(set(model_texts)) == 1 else (0.5 if len(model_texts) > 1 else 0.0)
+-    return base, {"pairs": len(model_texts)}
++    details = {"pairs": len(model_texts)}
++    if router_meta:
++        # Nudge score up/down by diversity (bounded)
++        div = float(router_meta.get("diversity_score", 0.0))
++        base = max(0.0, min(1.0, 0.8*base + 0.2*div))
++        details["diversity_score"] = div
++    return base, details
+*** End Patch
+*** Update File: src/ecl/provenance/prov.py
+@@
+-def prov_from_generations(generations):
++def prov_from_generations(generations, route_meta=None):
+     """
+-    Build a minimal PROV-like dict from generations.
++    Build a minimal PROV-like dict from generations + router metadata.
+     """
+     entities = []
+     for g in generations:
+         entities.append({
+             "id": g.metadata.get("provider_id", g.metadata.get("vendor","unknown")),
+             "attrs": {
+                 "model": g.metadata.get("model"),
+                 "vendor": g.metadata.get("vendor"),
+                 "arch_family": g.metadata.get("arch_family"),
+                 "latency_ms": g.metadata.get("latency_ms"),
++                "route_id": g.metadata.get("route_id"),
+             }
+         })
+-    return {"entities": entities}
++    return {"entities": entities, "route": route_meta or {}}
+*** End Patch
+*** Update File: src/ecl/server/app.py
+@@
+ from fastapi import FastAPI
+ from pydantic import BaseModel
+ from .app_common import extract_claims_stub
+ from ..consensus.score import score_consensus
+ from ..calibration.isotonic import calibrate_stub
+ from ..provenance.prov import prov_from_generations
++from ..router import DynamicRouter, ProviderSpec, RoutePolicy
++import yaml, os
+@@
+ app = FastAPI(title="ECL API", version="0.2.0")
+@@
+ class VerifyRequest(BaseModel):
+     prompt: str = "State one security best practice for cookies."
+     contains_pii: bool = False
+     timeout_s: float = 8.0
+@@
+ @app.post("/verify")
+ def verify(req: VerifyRequest):
+-    # Stub: two local models
+-    models = [{"text": "Use httpOnly cookies to mitigate XSS token theft."},
+-              {"text": "httpOnly cookie flags reduce XSS attack surface."}]
+-    texts = [m["text"] for m in models]
+-    cscore, cdetail = score_consensus(texts)
+-    ecs = calibrate_stub(cscore)
+-    prov = prov_from_generations([])
++    # Dynamic Router load (policy & providers)
++    pol_path = os.getenv("ECL_POLICY_FILE", "policies/providers.yml")
++    pol = yaml.safe_load(open(pol_path))
++    specs = [ProviderSpec(**p) for p in pol.get("providers",[])]
++    pol_cfg = pol.get("strategies",[{"name":"default","select":{"type":"quorum_k_of_n","k":2,"providers":[]}}])[0]
++    policy = RoutePolicy(name=pol_cfg["name"], select=pol_cfg["select"], constraints=pol_cfg.get("constraints",{}))
++    router = DynamicRouter(specs, policy)
++    gens, rmeta = router.generate(req.prompt, contains_pii=req.contains_pii, timeout_s=req.timeout_s)
++    texts = [g.text for g in gens if g.text]
++    cscore, cdetail = score_consensus(texts, router_meta=rmeta)
++    ecs = calibrate_stub(cscore)
++    prov = prov_from_generations(gens, route_meta=rmeta)
+     return {
+         "x-schema-version": "1.1",
+         "ecs": ecs,
+         "claims": [{"text": t} for t in texts[:3]],
+         "consensus": {"score": cscore, "details": cdetail, "models": [g.metadata.get("model") for g in gens]},
+         "provenance": {"prov_json": prov, "hash_version": "prov-hash-v1"},
+         "errors": [],
+     }
+*** End Patch
+*** Add File: tests/test_router.py
++from src.ecl.router import DynamicRouter, ProviderSpec, RoutePolicy
++from src.ecl.adapters.base import Generation, AdapterRegistry, BaseAdapter
++
++class _FakeA(BaseAdapter):
++    name = "fakeA"
++    def generate(self, prompt:str, **kw):
++        return Generation(text="alpha", metadata={"vendor":"A","arch_family":"x"})
++class _FakeB(BaseAdapter):
++    name = "fakeB"
++    def generate(self, prompt:str, **kw):
++        return Generation(text="alpha", metadata={"vendor":"B","arch_family":"y"})
++
++def test_router_diversity_weights(tmp_path, monkeypatch):
++    reg = AdapterRegistry.global_registry()
++    reg.register(_FakeA())
++    reg.register(_FakeB())
++    specs = [ProviderSpec(id="a", kind="fakeA", model="m"), ProviderSpec(id="b", kind="fakeB", model="m")]
++    policy = RoutePolicy(name="default", select={"type":"quorum_k_of_n","k":2,"providers":["a","b"]}, constraints={"budget_usd":0.01})
++    router = DynamicRouter(specs, policy)
++    gens, meta = router.generate("test")
++    assert len(gens) >= 1
++    assert 0.0 <= meta["diversity_score"] <= 1.0
++
+*** End Patch
+*** Add File: tests/test_adapters_retry.py
++import time
++from types import SimpleNamespace
++from src.ecl.adapters.base import BaseAdapter, Generation, ProviderError
++
++class FlakyAdapter(BaseAdapter):
++    name = "flaky"
++    def __init__(self):
++        self.calls = 0
++    def generate(self, prompt:str, **kw):
++        self.calls += 1
++        if self.calls < 2:
++            raise ProviderError("transient")
++        return Generation(text="ok", metadata={})
++
++def test_retry_like_backoff():
++    a = FlakyAdapter()
++    # emulate simple backoff loop here (router would wrap in future)
++    for i in range(2):
++        try:
++            g = a.generate("ping")
++            assert g.text == "ok"
++            break
++        except ProviderError:
++            time.sleep(0.01)
++
+*** End Patch
+*** Add File: docs/router.md
++# Dynamic Model Router
++
++Chooses *k* providers per policy, enforces **budget** and **latency** caps, gathers generations and emits rich **metadata** used by consensus & provenance.
++
++- Config: `policies/providers.yml`
++- Module: `src/ecl/router.py`
++- Adds `diversity_score`, `budget_spent_usd`, `route_id` to API response.
++
++## Guardrails
++- **PII**: per-provider `allow_pii` + pre-send redaction opportunity.
++- **Budget/latency**: `budget_usd`, `max_latency_ms` constraints.
++- **Health & failover**: adapters raise `ProviderError`; router proceeds.
++- **Schema & calibration**: response includes `x-schema-version`; keep ECE/Brier tracking per-provider downstream.
++
++## Try it
++```bash
++export OPENROUTER_API_KEY=...
++uvicorn src.ecl.server.app:app --reload
++curl -s localhost:8000/verify | jq .
++```
++
+*** End Patch
+*** Update File: docs/mkdocs.yml
+@@
+   - Overview: index.md
+   - API: api.md
+   - Tutorial: tutorial.md
+   - Bots: bots.md
++  - Router: router.md
+   - Governance: governance.md
+*** End Patch
+*** Update File: README.md
+@@
+-**Providers**: OpenAI/Anthropic stubs with clean interfaces.
++**Providers/Router**: Adapters for Gemini, Vertex, Ollama, HF, OpenRouter + dynamic routing with budget/latency & diversity-weighted consensus.
++
++Config policy: `policies/providers.yml`
++
+*** End Patch
+*** Update File: .env.example
+@@
+ # Providers
+ OPENAI_API_KEY=
+ ANTHROPIC_API_KEY=
++OPENROUTER_API_KEY=
++GEMINI_API_KEY=
++VERTEX_PROJECT=
++VERTEX_LOCATION=us-central1
++HF_API_URL=
++HF_API_TOKEN=
++
++# Router
++ECL_POLICY_FILE=policies/providers.yml
+*** End Patch
+PATCH
+
+git apply router_providers_patch.diff
+git add .
+git commit -m "feat(router+adapters): Gemini, Vertex, Ollama, HF, OpenRouter; dynamic router with policy; diversity-weighted consensus/prov; tests+docs"
+git push origin main
+
+# run locally
+pip install google-generativeai google-cloud-aiplatform
+uvicorn src.ecl.server.app:app --reload
+curl -s localhost:8000/verify | jq .
