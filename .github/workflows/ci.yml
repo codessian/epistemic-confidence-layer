@@ -39,6 +39,10 @@ jobs:
         run: |
           python -m pytest
 
+      - name: Performance benchmark gate
+        run: |
+          python benchmarks/scripts/performance_suite.py --mode both --iterations 20 --load-factor 2 --output benchmarks/results/performance-suite.json --min-improvement-pct 30
+
       - name: Toy eval (reliability curve)
         run: |
           python benchmarks/scripts/plot_reliability.py --input benchmarks/tasks/toy.jsonl --output benchmarks/results/reliability.png
@@ -56,6 +60,12 @@ jobs:
         with:
           name: reliability-curve
           path: benchmarks/results/reliability.png
+
+      - name: Upload performance suite
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-suite
+          path: benchmarks/results/performance-suite.json
 
       - name: Upload SBOM
         uses: actions/upload-artifact@v4

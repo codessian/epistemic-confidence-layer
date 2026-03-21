@@ -1,23 +1,20 @@
 import hashlib
-import uuid
 from typing import Dict, List
 
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 def heuristic_extract(prompt: str) -> List[Dict]:
-    """
-    Deterministic stub: treat the whole prompt as one claim if it ends with '?'
-    Otherwise, split by '.' and keep non-empty sentences as claims.
-    """
+    cleaned = (prompt or "").strip()
+    if not cleaned:
+        return []
     claims: List[Dict] = []
-    texts: List[str] = []
-    if prompt.strip().endswith("?"):
-        texts = [prompt.strip()]
+    if cleaned.endswith("?"):
+        texts = [cleaned]
     else:
-        texts = [t.strip() for t in prompt.split(".") if t.strip()]
+        texts = [token.strip() for token in cleaned.split(".") if token.strip()]
     for t in texts:
-        cid = f"c_{uuid.uuid4().hex[:8]}"
+        cid = f"c_{_hash(t)[:8]}"
         claims.append({
             "id": cid,
             "text": t,

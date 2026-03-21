@@ -1,0 +1,1 @@
+{"text": "[openrouter-stub] hello", "metadata": {"provider_id": "openrouter", "provider_kind": "openrouter", "model": "deepseek/deepseek-chat", "vendor": "openrouter", "arch_family": "var", "latency_ms": 0, "route_id": "route-1774102086998", "request_id": "959df7b2-9ab7-4969-acd0-54abe58b5920"}}

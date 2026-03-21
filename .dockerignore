@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+tests
+benchmarks/results
+research
+artifacts
+docs
