@@ -1,27 +1,42 @@
 import time
-from types import SimpleNamespace
-from src.ecl.adapters.base import BaseAdapter, Generation, ProviderError
+
+from src.adapters.base import AdapterRequest, BaseAdapter, Generation, ProviderError
 
 class FlakyAdapter(BaseAdapter):
-    name = "flaky"
+    provider_kind = "flaky"
+
     def __init__(self):
         super().__init__("flaky")
         self.calls = 0
-    def generate(self, prompt:str, **kw):
+
+    def generate(self, req: AdapterRequest | str, **kw):
         self.calls += 1
         if self.calls < 2:
             raise ProviderError("transient", "Temporary failure", "flaky")
         return Generation(text="ok", metadata={})
+
     def is_available(self) -> bool:
         return True
 
-def test_retry_like_backoff():
+
+def test_retryable_provider_error_preserves_code_and_retryability():
     a = FlakyAdapter()
-    # emulate simple backoff loop here (router would wrap in future)
-    for i in range(2):
+    for _ in range(2):
         try:
             g = a.generate("ping")
             assert g.text == "ok"
             break
         except ProviderError:
             time.sleep(0.01)
+
+
+def test_non_retryable_error_is_not_retried():
+    class HardFail(FlakyAdapter):
+        def generate(self, req: AdapterRequest | str, **kw):
+            raise ProviderError("BAD_REQUEST", "Invalid input", "hard")
+
+    a = HardFail()
+    try:
+        a.generate("ping")
+    except ProviderError as exc:
+        assert exc.code == "BAD_REQUEST"

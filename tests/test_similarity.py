@@ -1,4 +1,4 @@
-from src.ecl.similarity import classify_similarity
+from src.similarity import classify_similarity
 
 def test_similarity_classes():
     eq, _ = classify_similarity("hello world", "hello world")

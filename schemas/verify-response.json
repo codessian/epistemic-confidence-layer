@@ -1,129 +1,59 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "ECL Verify Response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VerifyResponse",
   "type": "object",
-  "required": ["claims", "consensus"],
+  "required": ["x_schema_version", "request_id", "ecs", "claims", "consensus", "provenance", "errors", "timing_ms"],
   "properties": {
+    "x_schema_version": {"type": "string", "const": "1.2"},
+    "request_id": {"type": "string"},
+    "route_id": {"type": ["string", "null"]},
+    "ecs": {"type": "number", "minimum": 0, "maximum": 1},
     "claims": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "text", "hash", "provenance"],
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^c_[a-f0-9]{8}$"
-          },
-          "text": {
-            "type": "string",
-            "minLength": 1
-          },
-          "hash": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{16}$"
-          },
-          "provenance": {
-            "type": "object",
-            "required": ["source"],
-            "properties": {
-              "source": {
-                "type": "string"
-              },
-              "prov": {
-                "type": "object",
-                "description": "W3C PROV entities/activities/agents"
-              }
-            }
-          }
-        }
-      }
+      "items": {"type": "object", "required": ["text"], "properties": {"text": {"type": "string"}}, "additionalProperties": false}
     },
     "consensus": {
+      "type": "object",
+      "required": ["score", "details", "models"],
+      "properties": {
+        "score": {"type": "number", "minimum": 0, "maximum": 1},
+        "details": {"type": "object"},
+        "models": {"type": "array", "items": {"type": ["string", "null"]}}
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["prov_json", "hash_version"],
+      "properties": {
+        "prov_json": {"type": "object"},
+        "hash_version": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "errors": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["claim_id", "agreement_score", "diversity_score", "evidence", "recency", "stability", "language_integrity", "ecs"],
+        "required": ["provider_id", "provider_kind", "model", "code", "message", "retryable"],
         "properties": {
-          "claim_id": {
-            "type": "string"
-          },
-          "agreement_score": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "diversity_score": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "evidence": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            }
-          },
-          "recency": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "stability": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "language_integrity": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "ecs": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Epistemic Confidence Score (calibrated)"
-          }
-        }
+          "provider_id": {"type": "string"},
+          "provider_kind": {"type": "string"},
+          "model": {"type": "string"},
+          "code": {"type": "string"},
+          "message": {"type": "string"},
+          "retryable": {"type": "boolean"},
+          "retry_after_ms": {"type": ["integer", "null"], "minimum": 0}
+        },
+        "additionalProperties": false
       }
     },
-    "metadata": {
+    "timing_ms": {
       "type": "object",
-      "properties": {
-        "processing_time_ms": {
-          "type": "number"
-        },
-        "cache_hits": {
-          "type": "integer"
-        },
-        "providers_used": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "error": {
-      "type": "object",
-      "properties": {
-        "code": {
-          "type": "string",
-          "enum": ["PROVIDER_TIMEOUT", "CACHE_HIT", "CALIBRATION_MISSING", "PROV_BUILD_FAIL", "RATE_LIMITED"]
-        },
-        "message": {
-          "type": "string"
-        },
-        "hint": {
-          "type": "string"
-        },
-        "retry_after_ms": {
-          "type": "integer"
-        }
-      }
-    },
-    "x_schema_version": {
-      "type": ["string", "null"]
+      "required": ["total"],
+      "properties": {"total": {"type": "integer", "minimum": 0}},
+      "additionalProperties": false
     }
-  }
+  },
+  "additionalProperties": false
 }

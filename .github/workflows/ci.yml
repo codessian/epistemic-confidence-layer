@@ -32,16 +32,20 @@ jobs:
 
       - name: Lint & typecheck
         run: |
-          ruff check .
-          mypy src
+          python -m ruff check .
+          python -m mypy src
 
       - name: Unit tests
         run: |
-          pytest -q
+          python -m pytest
 
       - name: Toy eval (reliability curve)
         run: |
           python benchmarks/scripts/plot_reliability.py --input benchmarks/tasks/toy.jsonl --output benchmarks/results/reliability.png
+
+      - name: Dependency vulnerability scan
+        run: |
+          python -m pip_audit -r requirements.txt
 
       - name: Generate SBOM
         run: |

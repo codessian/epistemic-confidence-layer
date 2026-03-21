@@ -1,4 +1,4 @@
-from src.ecl.provenance.prov import stable_claim_id, prov_json_for_claims
+from src.provenance.prov import prov_json_for_claims, stable_claim_id
 
 def test_stable_ids():
     a = stable_claim_id("Same claim")

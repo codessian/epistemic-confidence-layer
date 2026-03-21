@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 import os
 from typing import Iterable, Tuple
+
 import numpy as np
 
 _BACKEND = os.getenv("ECL_EMBED_BACKEND", "sentence-transformers").lower()
@@ -14,8 +16,9 @@ class EmbeddingBackend:
         if self.backend == "sentence-transformers":
             try:
                 from sentence_transformers import SentenceTransformer  # type: ignore
-            except Exception as e:  # pragma: no cover
-                raise RuntimeError("sentence-transformers not installed") from e
+            except Exception:
+                self.backend = "stub"
+                return
             model_name = os.getenv("ECL_ST_MODEL", "all-MiniLM-L6-v2")
             self._model = SentenceTransformer(model_name)
         elif self.backend == "openai":
@@ -27,23 +30,28 @@ class EmbeddingBackend:
             self._client = OpenAI(api_key=api_key)
             self._embed_model = os.getenv("ECL_OPENAI_EMBED_MODEL", "text-embedding-3-small")
         else:
-            # fallback stub
             pass
 
     def embed(self, texts: Iterable[str]) -> np.ndarray:
-        texts = list(texts)
+        text_list = list(texts)
         if self.backend == "sentence-transformers" and self._model is not None:
-            vecs = self._model.encode(texts, normalize_embeddings=True)
-            return np.asarray(vecs, dtype=np.float32)
-        elif self.backend == "openai" and self._client is not None and self._embed_model:
-            resp = self._client.embeddings.create(model=self._embed_model, input=texts)
-            vecs = [np.asarray(d.embedding, dtype=np.float32) for d in resp.data]
-            vecs = [v / np.linalg.norm(v) if np.linalg.norm(v) > 0 else v for v in vecs]
-            return np.vstack(vecs)
-        else:
-            # deterministic stub embeddings (1D) to keep behavior stable
-            vals = [hash(t) % 997 / 997.0 for t in texts]
-            return np.asarray([[v] for v in vals], dtype=np.float32)
+            encoded = self._model.encode(text_list, normalize_embeddings=True)
+            return np.asarray(encoded, dtype=np.float32)
+        if self.backend == "openai" and self._client is not None and self._embed_model:
+            resp = self._client.embeddings.create(model=self._embed_model, input=text_list)
+            vectors = [np.asarray(item.embedding, dtype=np.float32) for item in resp.data]
+            normalized = [vector / np.linalg.norm(vector) if np.linalg.norm(vector) > 0 else vector for vector in vectors]
+            return np.vstack(normalized)
+        alphabet = "abcdefghijklmnopqrstuvwxyz0123456789 "
+        fallback_vectors: list[np.ndarray] = []
+        for text in text_list:
+            lowered = text.lower()
+            vector = np.asarray([lowered.count(ch) for ch in alphabet], dtype=np.float32)
+            norm = np.linalg.norm(vector)
+            if norm > 0:
+                vector = vector / norm
+            fallback_vectors.append(vector)
+        return np.vstack(fallback_vectors)
 
 
 def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:

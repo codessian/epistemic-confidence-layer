@@ -1,5 +1,9 @@
 from __future__ import annotations
-import json, os, time, hashlib
+
+import hashlib
+import json
+import os
+import time
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
@@ -20,8 +24,10 @@ class FileCache:
         if not p.exists():
             return None
         if time.time() - p.stat().st_mtime > self.ttl:
-            try: p.unlink()
-            except OSError: pass
+            try:
+                p.unlink()
+            except OSError:
+                pass
             return None
         try:
             return json.loads(p.read_text())

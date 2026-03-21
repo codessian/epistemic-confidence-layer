@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 def score_consensus(model_texts, router_meta=None):
     """

@@ -1,5 +1,6 @@
-from src.ecl.cache import FileCache
 import time
+
+from src.cache import FileCache
 
 def test_cache_hit_and_expiry(tmp_path):
     c = FileCache(root=tmp_path, ttl_hours=0.0001)  # ~0.36s

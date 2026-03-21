@@ -1,9 +1,10 @@
-# Import all adapters to ensure they register themselves
-from . import openai
-from . import anthropic
-from . import google
-from . import openrouter
-from . import ollama
-from . import hf
-from . import gemini
-from . import vertex
+from . import anthropic as anthropic
+from . import gemini as gemini
+from . import google as google
+from . import hf as hf
+from . import ollama as ollama
+from . import openai as openai
+from . import openrouter as openrouter
+from . import vertex as vertex
+
+__all__ = ["openai", "anthropic", "google", "openrouter", "ollama", "hf", "gemini", "vertex"]

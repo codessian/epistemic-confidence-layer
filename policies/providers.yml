@@ -15,6 +15,10 @@ providers:
     kind: gemini
     model: gemini-1.5-flash
     allow_pii: false
+  - id: google:flash
+    kind: google
+    model: gemini-1.5-flash
+    allow_pii: false
   - id: vertex:flash
     kind: vertex
     model: gemini-1.5-flash
@@ -25,7 +29,15 @@ providers:
     allow_pii: false
   - id: hf:tgi
     kind: hf
-    model: repo-id           # set HF_API_URL env instead of model
+    model: repo-id
+    allow_pii: false
+  - id: openai:gpt-4o-mini
+    kind: openai
+    model: gpt-4o-mini
+    allow_pii: false
+  - id: anthropic:haiku
+    kind: anthropic
+    model: claude-3-haiku-20240307
     allow_pii: false
 
 strategies:
@@ -33,7 +45,7 @@ strategies:
     select:
       type: quorum_k_of_n
       k: 2
-      providers: [gemini:flash, openrouter:deepseek-chat, mistral:large, ollama:llama3.1-8b]
+      providers: [gemini:flash, openrouter:deepseek-chat, openai:gpt-4o-mini, anthropic:haiku, ollama:llama3.1-8b]
     constraints:
       min_diversity_score: 0.6
       max_latency_ms: 4000
