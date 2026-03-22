@@ -1,0 +1,1 @@
+{"text": "[ollama-stub] hello", "metadata": {"provider_id": "ollama", "provider_kind": "ollama", "model": "llama3.1:8b", "vendor": "ollama", "arch_family": "local", "latency_ms": 0, "route_id": "route-1774143741782", "request_id": "75844857-afb2-408b-8428-c37336a9983f"}}

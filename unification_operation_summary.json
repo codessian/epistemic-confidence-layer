@@ -1,0 +1,29 @@
+{
+  "generatedUtc": "2026-03-22T04:25:01.962357+00:00",
+  "phaseStatus": {
+    "backup": true,
+    "copy": true,
+    "delete": true,
+    "verify": true
+  },
+  "artifacts": {
+    "backupPointer": "c:\\Projects\\ecl\\unification_backup_pointer.json",
+    "copyManifest": "c:\\Projects\\ecl\\copy_manifest.json",
+    "deletionLog": "c:\\Projects\\ecl\\deletion_log.json",
+    "verificationFileIntegrity": "c:\\Projects\\ecl\\verification_file_integrity.json",
+    "performanceResult": "c:\\Projects\\ecl\\benchmarks\\results\\performance-suite.json"
+  },
+  "redundantRootExists": false,
+  "copiedCount": 8,
+  "integrity": {
+    "timestampUtc": "2026-03-22T01:39:23.008926Z",
+    "copiedCount": 8,
+    "missingDestinations": [],
+    "checksumMismatches": [],
+    "redundantRootExists": false
+  },
+  "performance": {
+    "pass": false,
+    "aggregateImprovementPct": -229.5010815309537
+  }
+}

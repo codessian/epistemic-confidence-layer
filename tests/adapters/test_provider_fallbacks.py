@@ -1,4 +1,3 @@
-import pytest
 import requests
 
 from src.adapters.gemini import GeminiAdapter

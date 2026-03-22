@@ -1,6 +1,3 @@
-import json
-from pathlib import Path
-
 from benchmarks.scripts.performance_suite import compare_results, run_suite
 
 

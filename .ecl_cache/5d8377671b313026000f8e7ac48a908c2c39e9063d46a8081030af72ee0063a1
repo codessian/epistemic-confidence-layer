@@ -1,0 +1,1 @@
+{"text": "[anthropic-stub] hello", "metadata": {"provider_id": "anthropic", "provider_kind": "anthropic", "model": "claude-3-haiku-20240307", "vendor": "anthropic", "arch_family": "claude", "latency_ms": 0, "route_id": "route-1774143934316", "request_id": "21c8ae43-461b-4856-b0d5-c7caa4b17e99"}}

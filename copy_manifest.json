@@ -1,0 +1,86 @@
+{
+  "timestampUtc": "2026-03-22T01:26:01.497379+00:00",
+  "copiedCount": 8,
+  "items": [
+    {
+      "relativePath": "#L01f9ed White Paper- The Epistemic Confidence Layer.gdoc",
+      "status": "copied",
+      "source": "c:\\Projects\\epistemic-confidence-layer-main\\#L01f9ed White Paper- The Epistemic Confidence Layer.gdoc",
+      "destination": "c:\\Projects\\ecl\\#L01f9ed White Paper- The Epistemic Confidence Layer.gdoc",
+      "sourceSha256": "03898BDD95402BFCB7A5C52B5047360A5377788FAC1AB53CFCAEA262DB22B114",
+      "destinationSha256": "03898BDD95402BFCB7A5C52B5047360A5377788FAC1AB53CFCAEA262DB22B114",
+      "size": 176,
+      "copiedUtc": "2026-03-22T01:26:01.245523+00:00"
+    },
+    {
+      "relativePath": "benchmarks/results/metrics.json",
+      "status": "copied",
+      "source": "c:\\Projects\\epistemic-confidence-layer-main\\benchmarks\\results\\metrics.json",
+      "destination": "c:\\Projects\\ecl\\benchmarks\\results\\metrics.json",
+      "sourceSha256": "86C26948D83F2B956699E02E39026DAF222D5CDE4050F6BB333347ECA979586F",
+      "destinationSha256": "86C26948D83F2B956699E02E39026DAF222D5CDE4050F6BB333347ECA979586F",
+      "size": 94,
+      "copiedUtc": "2026-03-22T01:26:01.261085+00:00"
+    },
+    {
+      "relativePath": "benchmarks/trends/ece_trend.csv",
+      "status": "copied",
+      "source": "c:\\Projects\\epistemic-confidence-layer-main\\benchmarks\\trends\\ece_trend.csv",
+      "destination": "c:\\Projects\\ecl\\benchmarks\\trends\\ece_trend.csv",
+      "sourceSha256": "DAF62ABFC28F2D55E6F09A4FD3C0B48EC2D52CF1091EC2AC72F215AAE5212AE2",
+      "destinationSha256": "DAF62ABFC28F2D55E6F09A4FD3C0B48EC2D52CF1091EC2AC72F215AAE5212AE2",
+      "size": 90,
+      "copiedUtc": "2026-03-22T01:26:01.275594+00:00"
+    },
+    {
+      "relativePath": "follow_ups.patch",
+      "status": "copied",
+      "source": "c:\\Projects\\epistemic-confidence-layer-main\\follow_ups.patch",
+      "destination": "c:\\Projects\\ecl\\follow_ups.patch",
+      "sourceSha256": "3FBE6605277BD06DC6F79FCE6A962783374A1A2068B20216A7366F1F6D6236F5",
+      "destinationSha256": "3FBE6605277BD06DC6F79FCE6A962783374A1A2068B20216A7366F1F6D6236F5",
+      "size": 10276,
+      "copiedUtc": "2026-03-22T01:26:01.302776+00:00"
+    },
+    {
+      "relativePath": "mkdocs.yml",
+      "status": "copied",
+      "source": "c:\\Projects\\epistemic-confidence-layer-main\\mkdocs.yml",
+      "destination": "c:\\Projects\\ecl\\mkdocs.yml",
+      "sourceSha256": "CBAE11D519EAB9E8826E64A8F2CEDB82C46F4912E27620E6868CAB1E042B6D7D",
+      "destinationSha256": "CBAE11D519EAB9E8826E64A8F2CEDB82C46F4912E27620E6868CAB1E042B6D7D",
+      "size": 1135,
+      "copiedUtc": "2026-03-22T01:26:01.347075+00:00"
+    },
+    {
+      "relativePath": "router_providers_patch.diff",
+      "status": "copied",
+      "source": "c:\\Projects\\epistemic-confidence-layer-main\\router_providers_patch.diff",
+      "destination": "c:\\Projects\\ecl\\router_providers_patch.diff",
+      "sourceSha256": "A5C9C11286472B75A486217B8F6007661B0CE593993939749D8CA3B4B9491814",
+      "destinationSha256": "A5C9C11286472B75A486217B8F6007661B0CE593993939749D8CA3B4B9491814",
+      "size": 20732,
+      "copiedUtc": "2026-03-22T01:26:01.379998+00:00"
+    },
+    {
+      "relativePath": "src/provenance/prov.py",
+      "status": "copied",
+      "source": "c:\\Projects\\epistemic-confidence-layer-main\\src\\provenance\\prov.py",
+      "destination": "c:\\Projects\\ecl\\src\\provenance\\prov.py",
+      "sourceSha256": "B1F0B22750D04D2ECB10AB6ED90A91CE2DBB70E7AB1116F51FFA95B430F3831B",
+      "destinationSha256": "B1F0B22750D04D2ECB10AB6ED90A91CE2DBB70E7AB1116F51FFA95B430F3831B",
+      "size": 2548,
+      "copiedUtc": "2026-03-22T01:26:01.449171+00:00"
+    },
+    {
+      "relativePath": "v0_2_feature_bundle.patch",
+      "status": "copied",
+      "source": "c:\\Projects\\epistemic-confidence-layer-main\\v0_2_feature_bundle.patch",
+      "destination": "c:\\Projects\\ecl\\v0_2_feature_bundle.patch",
+      "sourceSha256": "1A97B5FB6C6A2120E32FC6876462CD1A714998424C143DF1962A1AE37A932B0B",
+      "destinationSha256": "1A97B5FB6C6A2120E32FC6876462CD1A714998424C143DF1962A1AE37A932B0B",
+      "size": 21317,
+      "copiedUtc": "2026-03-22T01:26:01.497361+00:00"
+    }
+  ]
+}

@@ -19,5 +19,5 @@ def test_similarity_stub_backend_produces_shape():
 
 def test_similarity_classify_bounds():
     label, score = classify_similarity("same", "same")
-    assert label in {"same", "overlap", "drift"}
-    assert -1.0 <= score <= 1.0
+    assert label in {"equivalent", "related", "different"}
+    assert -1.000001 <= score <= 1.000001

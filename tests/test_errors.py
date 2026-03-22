@@ -1,5 +1,3 @@
-import pytest
-
 from src.errors import AdapterError, error_envelope_from_exception, normalize_error, to_generation_error
 
 
