@@ -28,7 +28,7 @@ cp .env.example .env
 ## 2. Start the API Server
 
 ```bash
-uvicorn src.ecl.server.app:app --reload
+uvicorn src.server.app:app --reload
 ```
 
 The server starts at `http://127.0.0.1:8000`. Open `http://127.0.0.1:8000/docs` for interactive Swagger UI.
@@ -41,35 +41,22 @@ curl -X POST http://127.0.0.1:8000/verify \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Is Knysna in the Western Cape of South Africa?",
-    "models": ["stub:gpt", "stub:claude"]
+    "contains_pii": false
   }'
 ```
 
 ### Expected Response
 ```json
 {
-  "claims": [
-    {
-      "id": "c_03911a33",
-      "text": "Is Knysna in the Western Cape of South Africa?",
-      "hash": "a8ed9f08c25a5811",
-      "provenance": {
-        "source": "extraction:heuristic"
-      }
-    }
-  ],
-  "consensus": [
-    {
-      "claim_id": "c_03911a33",
-      "agreement_score": 0.8,
-      "diversity_score": 0.6,
-      "evidence": [],
-      "recency": 1.0,
-      "stability": 0.9,
-      "language_integrity": 0.95,
-      "ecs": 0.88
-    }
-  ]
+  "x_schema_version": "1.2",
+  "request_id": "…",
+  "route_id": "…",
+  "ecs": 0.88,
+  "claims": [{ "text": "…" }],
+  "consensus": { "score": 0.7, "details": {}, "models": ["…", null] },
+  "provenance": { "prov_json": {}, "hash_version": "…" },
+  "errors": [],
+  "timing_ms": { "total": 1234 }
 }
 ```
 
@@ -98,30 +85,49 @@ The plot shows:
 
 ## 6. Advanced Usage
 
+### Using the CLI (User-Friendly)
+
+ECL ships a small CLI wrapper around `POST /verify`.
+
+Run it from the repository root:
+
+```bash
+python -m src.cli "What is the capital of France?"
+```
+
+If your server is running on a different host/port:
+
+```bash
+python -m src.cli "Test prompt" --host http://127.0.0.1:8000
+```
+
+If API key auth is enabled:
+
+```bash
+python -m src.cli "Test prompt" --api-key your_key_here
+```
+
 ### Using Real Providers (Optional)
 ```bash
 # Set API keys in .env
-ECL_OPENAI_API_KEY=your_key_here
-ECL_ANTHROPIC_API_KEY=your_key_here
+OPENAI_API_KEY=your_key_here
+ANTHROPIC_API_KEY=your_key_here
 
 # Test with real models
-curl -X POST http://127.0.0.1:8000/verify \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "What is the capital of France?",
-    "models": ["openai:gpt-3.5-turbo", "anthropic:claude-3-sonnet"]
-  }'
-```
+Provider selection is configured by policy (not per-request). To choose which providers/models participate, edit `policies/providers.yml` and adjust:
 
+- provider entries (`id`, `kind`, `model`, `allow_pii`)
+- strategy selection (`k` and `providers`)
 ### Batch Processing
 Use the Python client for multiple requests:
 ```python
 import requests
+import requests
 
-def verify_claim(prompt, models=["stub:gpt", "stub:claude"]):
+def verify_claim(prompt):
     response = requests.post(
         "http://127.0.0.1:8000/verify",
-        json={"prompt": prompt, "models": models}
+        json={"prompt": prompt, "contains_pii": False}
     )
     return response.json()
 
@@ -134,7 +140,7 @@ claims = [
 
 for claim in claims:
     result = verify_claim(claim)
-    ecs = result["consensus"][0]["ecs"]
+    ecs = result["ecs"]
     print(f"Claim: {claim}")
     print(f"Confidence: {ecs:.2f}")
     print("---")

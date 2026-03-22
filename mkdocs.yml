@@ -27,14 +27,16 @@ theme:
     - content.code.copy
 
 nav:
-  - Overview: docs/overview.md
-  - Tutorial: docs/tutorial.md
-  - Architecture: docs/architecture.md
-  - API: docs/api.md
-  - Calibration: docs/calibration.md
-  - Governance: docs/governance.md
-  - Bots: docs/bots.md
-  - Operations: docs/operations.md
+  - Overview: overview.md
+  - Installation: installation.md
+  - Tutorial: tutorial.md
+  - Architecture: architecture.md
+  - API: api.md
+  - Troubleshooting: troubleshooting.md
+  - Calibration: calibration.md
+  - Governance: governance.md
+  - Bots: bots.md
+  - Operations: operations.md
 
 markdown_extensions:
   - pymdownx.highlight:

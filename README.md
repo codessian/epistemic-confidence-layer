@@ -18,7 +18,7 @@
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
-uvicorn src.ecl.server.app:app --reload
+uvicorn src.server.app:app --reload
 ```
 
 ▶️ **Try the API:** Open http://127.0.0.1:8000/docs for interactive Swagger UI
@@ -27,7 +27,7 @@ Then test with curl:
 ```bash
 curl -X POST http://127.0.0.1:8000/verify \
   -H "Content-Type: application/json" \
-  -d '{"prompt":"Is Knysna in the Western Cape of South Africa?", "models":["stub:gpt","stub:claude"]}'
+  -d '{"prompt":"Is Knysna in the Western Cape of South Africa?", "contains_pii": false}'
 ```
 
 ## Features
@@ -43,29 +43,28 @@ For production use with actual model providers:
 cp .env.example .env
 
 # Add your API keys
-ECL_OPENAI_API_KEY=your_openai_key
-ECL_ANTHROPIC_API_KEY=your_anthropic_key
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
+GOOGLE_API_KEY=your_google_key
 ECL_EMBED_BACKEND=sentence-transformers  # or "openai"
 ECL_ST_MODEL=all-MiniLM-L6-v2
 ECL_OPENAI_EMBED_MODEL=text-embedding-3-small
 ```
 
-**Local Models:** ECL supports Ollama for offline development:
-```bash
-# Install Ollama, then:
-ECL_LOCAL_MODEL=ollama:llama3.1:8b
-ECL_OLLAMA_BASE_URL=http://localhost:11434
-```
+**Local Models:** ECL supports Ollama for offline development. Ensure Ollama is running on `http://127.0.0.1:11434`, then include an `ollama` provider in `policies/providers.yml` with a model such as `llama3.1`.
 
 **Response (stubbed):**
 ```json
 {
-  "claims": [
-    {"id":"c_1","text":"Knysna is in the Western Cape of South Africa.","hash":"...","provenance":{"source":"extraction:heuristic"}}
-  ],
-  "consensus": [
-    {"claim_id":"c_1","agreement_score":0.95,"diversity_score":0.60,"evidence":[],"recency":1.0,"stability":0.9,"language_integrity":0.95,"ecs":0.88}
-  ]
+  "x_schema_version": "1.2",
+  "request_id": "…",
+  "route_id": "…",
+  "ecs": 0.88,
+  "claims": [{ "text": "…" }],
+  "consensus": { "score": 0.7, "details": {}, "models": ["…", null] },
+  "provenance": { "prov_json": {}, "hash_version": "…" },
+  "errors": [],
+  "timing_ms": { "total": 1234 }
 }
 ```
 
