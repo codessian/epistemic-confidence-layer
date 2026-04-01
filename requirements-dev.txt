@@ -4,7 +4,7 @@ ruff==0.6.9
 mypy==1.11.2
 requests==2.32.3
 matplotlib==3.9.2
-numpy==2.1.2
+numpy==2.2.6
 cycler==0.12.1
 pre-commit==4.0.1
 cyclonedx-bom==4.1.1
